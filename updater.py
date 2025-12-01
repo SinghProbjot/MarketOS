@@ -5,7 +5,7 @@ import tkinter as tk
 from tkinter import messagebox
 
 # Sostituisci con il tuo URL RAW di GitHub
-GITHUB_BASE_URL = "https://github.com/SinghProbjot/MarketOS.git"
+GITHUB_BASE_URL = "https://raw.githubusercontent.com/SinghProbjot/MarketOS/refs/heads/main/"
 FILES_TO_UPDATE = ["market_os.html", "server.py"]
 VERSION_FILE = "version.json"
 LOCAL_VERSION_FILE = "local_version.json"
