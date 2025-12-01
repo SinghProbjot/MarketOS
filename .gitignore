@@ -1,0 +1,29 @@
+# --- DATI SENSIBILI (MAI CARICARE!) ---
+market.db
+market.db-journal
+local_version.json
+config.json
+
+# --- CARTELLE TEMPORANEE E SISTEMA ---
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+
+# --- AMBIENTE VIRTUALE PYTHON ---
+venv/
+env/
+.env
+
+# --- EDITOR E IDE ---
+.vscode/
+.idea/
+
+# --- FILE DI OUTPUT / BUILD (Non servono nel codice sorgente) ---
+Output/
+*.exe
+*.zip
+*.log
+
+# --- NODE MODULES (Se in futuro userai npm) ---
+node_modules/
