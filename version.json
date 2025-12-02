@@ -1,4 +1,17 @@
 {
-  "version": "6.1",
-  "changelog": "Test client - Gestione prodotti a peso\n- Generatore barcode interni\n- Ottimizzazione POS"
+  "latest_version": "6.1",
+  "release_date": "2023-10-27",
+  "download_url": "", 
+  "history": [
+    {
+      "version": "6.1",
+      "date": "2023-10-27",
+      "changelog": "- Nuova grafica Dark Mode\n- Risolto bug carrello"
+    },
+    {
+      "version": "6.0",
+      "date": "2023-10-20",
+      "changelog": "- Rilascio iniziale\n- Gestione pesi"
+    }
+  ]
 }
