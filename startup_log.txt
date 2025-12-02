@@ -1,0 +1,6 @@
+15:18:08 - --- AVVIO MARKETOS ---
+15:18:08 - Avvio thread Flask...
+ http://127.0.0.1:5500...
+15:18:09 - Server RISPONDE! Pronti al lancio.
+15:18:09 - Finestra creata. Avvio GUI.
+15:18:11 - Finestra chiusa dall'utente. Arresto sistema.
