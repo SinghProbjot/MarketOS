@@ -2,51 +2,45 @@ import webview
 import threading
 import time
 import sys
-import server
 import urllib.request
-# Non importiamo più updater qui per evitare conflitti di file lock
+import server # Importa il tuo server.py locale
+import os
+
+# PORTA CONFIGURATA: 5500
+SERVER_URL = 'http://127.0.0.1:5500'
 
 def start_flask():
-    """Avvia il server in un thread e gestisce eventuali errori silenziosi"""
     try:
         server.start_server_thread()
     except Exception as e:
-        print(f"Errore critico server: {e}")
+        print(f"Errore Server Thread: {e}")
 
-def wait_for_server(url, timeout=15):
-    """Bussa al server finché non risponde o scade il tempo"""
+def wait_for_server(url, timeout=20):
     start_time = time.time()
-    print(f"In attesa del server su {url}...")
     while time.time() - start_time < timeout:
         try:
             with urllib.request.urlopen(url) as response:
-                if response.status == 200:
-                    print("Server pronto!")
-                    return True
+                if response.status == 200: return True
         except:
-            time.sleep(0.5) 
+            time.sleep(0.5)
     return False
 
 def on_closed():
-    print("Chiusura applicazione...")
-    sys.exit()
+    # Uccide brutalmente i processi python alla chiusura per pulire la porta
+    os._exit(0)
 
 if __name__ == '__main__':
-    # L'aggiornamento è delegato al file .bat che lancia updater.py PRIMA di questo script.
-    # Questo evita errori di "Permesso Negato" su Windows.
-
-    # 1. Avvia Server Database
+    # 1. Avvia Server in background
     t = threading.Thread(target=start_flask)
     t.daemon = True
     t.start()
 
-    server_url = 'http://127.0.0.1:5000'
-
-    # 2. CONTROLLO ATTIVO
-    if wait_for_server(server_url):
+    # 2. Aspetta che risponda
+    if wait_for_server(SERVER_URL):
+        # 3. Apri Finestra
         window = webview.create_window(
             'MarketOS Pro', 
-            server_url, 
+            SERVER_URL, 
             width=1280, 
             height=800,
             confirm_close=True,
@@ -55,5 +49,5 @@ if __name__ == '__main__':
         webview.start(on_closed)
     else:
         import ctypes
-        ctypes.windll.user32.MessageBoxW(0, "Errore Critico: Il Database non si è avviato.", "Errore MarketOS", 16)
+        ctypes.windll.user32.MessageBoxW(0, "Errore Critico: Il server database non risponde sulla porta 5500.", "Errore MarketOS", 16)
         sys.exit(1)
