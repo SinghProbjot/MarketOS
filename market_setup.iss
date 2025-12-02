@@ -1,28 +1,35 @@
-; Script generato per MarketOS - Gestionale
-; Richiede Inno Setup (scaricabile gratuitamente da jrsoftware.org)
+; Script Inno Setup per MarketOS Pro
+; Configurato per installazione in AppData (Nessun problema di permessi)
 
 #define MyAppName "MarketOS Pro"
 #define MyAppVersion "6.0"
-#define MyAppPublisher "Singh Probjot"
+#define MyAppPublisher "Tuo Nome"
 #define MyAppExeName "AVVIA_MARKET.bat"
 
 [Setup]
-; Identificativo univoco dell'app (generato casualmente, non cambiarlo dopo la prima release)
-AppId={{A1B2C3D4-E5F6-7890-1234-567890ABCDEF}
+; ID Univoco dell'applicazione
+AppId={{MARKET-OS-PRO-V6-UUID}}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={autopf}\{#MyAppName}
-DisableProgramGroupPage=yes
-; Richiede diritti amministratore per installare Python se serve
+
+; --- CARTELLA DESTINAZIONE ---
+; {localappdata} punta a C:\Users\Nome\AppData\Local\
+; Qui abbiamo sempre i permessi di scrittura per gli update!
+DefaultDirName={localappdata}\{#MyAppName}
+
+; Non disabilitiamo la pagina della cartella, così l'utente può cambiarla se vuole,
+; ma il default è sicuro.
+DisableDirPage=no
+
+; L'installer richiede privilegi admin solo per installare le dipendenze globali (Python)
 PrivilegesRequired=admin
+
 OutputDir=.
 OutputBaseFilename=MarketOS_Setup_v{#MyAppVersion}
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
-; Icona del setup (opzionale, se ne hai una .ico decommenta la riga sotto)
-; SetupIconFile=icona_negozio.ico
 
 [Languages]
 Name: "italian"; MessagesFile: "compiler:Languages\Italian.isl"
@@ -31,30 +38,34 @@ Name: "italian"; MessagesFile: "compiler:Languages\Italian.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-; Copia tutti i file necessari. Assicurati che siano nella stessa cartella di questo script .iss quando compili.
+; I file del programma (Assicurati che siano nella stessa cartella quando compili)
 Source: "market_os.html"; DestDir: "{app}"; Flags: ignoreversion
 Source: "server.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "desktop_app.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "updater.py"; DestDir: "{app}"; Flags: ignoreversion
-Source: "version.json"; DestDir: "{app}"; Flags: ignoreversion
+
+; --- FIX FONDAMENTALE QUI SOTTO ---
+; Copia "version.json" (sorgente) ma lo rinomina in "local_version.json" (destinazione)
+Source: "version.json"; DestDir: "{app}"; DestName: "local_version.json"; Flags: ignoreversion
+
 Source: "AVVIA_MARKET.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "install_env.bat"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-; Crea il collegamento nel menu Start
+; Icona nel Menu Start
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\server.py"; IconIndex: 0
-; Crea il collegamento sul Desktop
+; Icona sul Desktop
 Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\server.py"; IconIndex: 0
 
 [Run]
-; Al termine dell'installazione, esegue lo script che controlla/installa Python e le librerie
-Filename: "{app}\install_env.bat"; StatusMsg: "Verifica e configurazione ambiente Python..."; Flags: runhidden waituntilterminated
+; 1. Installa le dipendenze (Python + Librerie)
+Filename: "{app}\install_env.bat"; StatusMsg: "Configurazione ambiente e librerie..."; Flags: runhidden waituntilterminated
 
-; Avvia l'applicazione alla fine (opzionale)
+; 2. Avvia il programma alla fine
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-; Pulisce eventuali file temporanei o log creati dopo l'installazione
+; Pulizia file temporanei alla disinstallazione
 Type: files; Name: "{app}\*.pyc"
 Type: filesandordirs; Name: "{app}\__pycache__"
-; NOTA: Non cancelliamo market.db per sicurezza, così i dati restano anche se disinstalli il software.
+; NOTA: Non cancelliamo market.db per sicurezza dei dati.

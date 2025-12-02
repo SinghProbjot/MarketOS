@@ -1,3 +1,4 @@
+
 import os
 import json
 import requests
@@ -6,9 +7,9 @@ from tkinter import messagebox
 import sys
 
 # --- CONFIGURAZIONE ---
+# Sostituisci con il tuo URL RAW di GitHub (quello che finisce con /main/)
 GITHUB_BASE_URL = "https://raw.githubusercontent.com/SinghProbjot/MarketOS/refs/heads/main/"
 
-# Ora aggiorna TUTTO il pacchetto
 FILES_TO_UPDATE = [
     "market_os.html", 
     "server.py", 
@@ -16,20 +17,26 @@ FILES_TO_UPDATE = [
     "updater.py" 
 ]
 
-VERSION_FILE = "version.json"
-LOCAL_VERSION_FILE = "local_version.json"
+VERSION_FILE = "version.json"      # File remoto su GitHub
+LOCAL_VERSION_FILE = "local_version.json" # File locale sul PC
 
-def get_remote_version():
+def get_remote_info():
     try:
+        # Scarica il JSON completo da GitHub
         r = requests.get(GITHUB_BASE_URL + VERSION_FILE, timeout=3)
-        return r.json() if r.status_code == 200 else None
+        if r.status_code == 200:
+            return r.json()
+        return None
     except: return None
 
 def get_local_version():
+    # Legge la versione installata
     if os.path.exists(LOCAL_VERSION_FILE):
-        try: return json.load(open(LOCAL_VERSION_FILE))
+        try: 
+            data = json.load(open(LOCAL_VERSION_FILE))
+            return data.get("version", "0.0")
         except: pass
-    return {"version": "0.0"}
+    return "0.0"
 
 def download_file(fname):
     print(f"Scaricando {fname}...")
@@ -39,51 +46,64 @@ def download_file(fname):
             with open(fname, 'wb') as f: 
                 f.write(r.content)
             return True
-        else:
-            print(f"Errore download {fname}: Status {r.status_code}")
     except Exception as e: 
-        print(f"Eccezione su {fname}: {e}")
+        print(f"Errore download {fname}: {e}")
     return False
 
 def check_and_update():
-    print("Controllo versione remota...")
-    remote = get_remote_version()
-    if not remote: 
-        print("Server aggiornamenti non raggiungibile.")
+    print("Controllo aggiornamenti...")
+    
+    remote_data = get_remote_info()
+    if not remote_data: 
+        print("Server offline o irraggiungibile.")
         return
 
-    local = get_local_version()
-    print(f"Versione Locale: {local.get('version')} - Remota: {remote.get('version')}")
+    # Estrae l'ultima versione dal nuovo formato JSON
+    remote_ver_str = remote_data.get("latest_version", "0.0")
+    local_ver_str = get_local_version()
+    
+    print(f"Versione Locale: {local_ver_str} -> Remota: {remote_ver_str}")
 
-    if float(remote.get("version", 0)) > float(local.get("version", 0)):
-        # GUI Popup
-        root = tk.Tk()
-        root.withdraw()
-        
-        changelog = remote.get('changelog', 'Miglioramenti vari')
-        msg = f"Nuova versione {remote['version']} disponibile!\n\nNovità:\n{changelog}\n\nVuoi scaricare l'aggiornamento?"
-        
-        if messagebox.askyesno("MarketOS Update", msg):
-            success = True
-            for f in FILES_TO_UPDATE: 
-                if not download_file(f):
-                    success = False
-                    messagebox.showerror("Errore", f"Impossibile scaricare {f}")
-                    break
+    try:
+        if float(remote_ver_str) > float(local_ver_str):
+            # Trova il changelog dell'ultima versione dalla storia
+            changelog = "Aggiornamento disponibile"
+            if "history" in remote_data:
+                for release in remote_data["history"]:
+                    if release["version"] == remote_ver_str:
+                        changelog = release.get("changelog", "")
+                        break
             
-            if success:
-                with open(LOCAL_VERSION_FILE, 'w') as f: json.dump(remote, f)
-                messagebox.showinfo("Fatto", "Aggiornamento completato! Il programma si avvierà ora.")
-            else:
-                messagebox.showwarning("Attenzione", "Aggiornamento parziale. Potrebbero esserci errori.")
-        
-        root.destroy()
-    else:
-        print("Nessun aggiornamento necessario.")
+            # GUI Popup
+            root = tk.Tk()
+            root.withdraw()
+            
+            msg = f"È disponibile la versione {remote_ver_str}!\n\nNovità:\n{changelog}\n\nVuoi aggiornare ora?"
+            
+            if messagebox.askyesno("MarketOS Update", msg):
+                success = True
+                for f in FILES_TO_UPDATE: 
+                    if not download_file(f):
+                        success = False
+                        messagebox.showerror("Errore", f"Impossibile scaricare {f}")
+                        break
+                
+                if success:
+                    # Aggiorna il file locale scrivendo solo la versione corrente
+                    with open(LOCAL_VERSION_FILE, 'w') as f: 
+                        json.dump({"version": remote_ver_str}, f)
+                        
+                    messagebox.showinfo("Fatto", "Aggiornamento installato! Il programma si riavvierà.")
+            
+            root.destroy()
+        else:
+            print("Nessun aggiornamento necessario.")
+            
+    except Exception as e:
+        print(f"Errore nel confronto versioni: {e}")
 
 if __name__ == "__main__":
     try:
         check_and_update()
     except Exception as e:
-        print(f"Errore Updater Critico: {e}")
-        # Non blocchiamo l'avvio se l'updater fallisce
+        print(f"Errore Updater: {e}")
