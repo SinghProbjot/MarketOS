@@ -7,19 +7,26 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
 # --- CONFIGURAZIONE PERCORSI WINDOWS ---
-# Salva i dati in C:\Users\NomeUtente\AppData\Roaming\MarketOS
-app_data_dir = os.getenv('APPDATA')
+# Usiamo Roaming per i dati (standard Windows per i DB)
+app_data_dir = os.getenv('APPDATA') # Solitamente C:\Users\Nome\AppData\Roaming
 market_data_dir = os.path.join(app_data_dir, 'MarketOS')
 
-# Crea la cartella se non esiste
+# Assicura che la cartella esista
 if not os.path.exists(market_data_dir):
     try:
         os.makedirs(market_data_dir)
-    except OSError:
-        market_data_dir = '.' # Fallback
+    except OSError as e:
+        # Fallback critico
+        market_data_dir = '.'
 
 DB_FILE = os.path.join(market_data_dir, 'market.db')
 LOG_FILE = os.path.join(market_data_dir, 'server_error.log')
+
+# Scrive un file di testo nella cartella del programma per dirti dove sta il DB
+try:
+    with open("DOVE_SONO_I_DATI.txt", "w") as f:
+        f.write(f"Il database si trova qui:\n{DB_FILE}")
+except: pass
 
 logging.basicConfig(filename=LOG_FILE, level=logging.ERROR, format='%(asctime)s %(levelname)s: %(message)s')
 
@@ -64,7 +71,7 @@ try:
             return jsonify(products)
         except Exception as e:
             logging.error(f"DB Error: {e}")
-            return jsonify([]), 500
+            return jsonify({"error": str(e)}), 500
 
     @app.route('/api/products', methods=['POST'])
     def upsert_product():
@@ -85,31 +92,36 @@ try:
 
     @app.route('/api/products/<code_id>', methods=['DELETE'])
     def delete_product(code_id):
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute("DELETE FROM products WHERE code = ?", (code_id,))
-        conn.commit()
-        conn.close()
-        return jsonify({"success": True})
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            c = conn.cursor()
+            c.execute("DELETE FROM products WHERE code = ?", (code_id,))
+            conn.commit()
+            conn.close()
+            return jsonify({"success": True})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
 
     @app.route('/api/logs', methods=['POST'])
     def add_log():
-        data = request.json
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute("INSERT INTO logs (date, type, total, items_json) VALUES (?, ?, ?, ?)", (data['date'], data['type'], data['total'], json.dumps(data.get('items', []))))
-        conn.commit()
-        conn.close()
-        return jsonify({"success": True})
+        try:
+            data = request.json
+            conn = sqlite3.connect(DB_FILE)
+            c = conn.cursor()
+            c.execute("INSERT INTO logs (date, type, total, items_json) VALUES (?, ?, ?, ?)", (data['date'], data['type'], data['total'], json.dumps(data.get('items', []))))
+            conn.commit()
+            conn.close()
+            return jsonify({"success": True})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
 
     def start_server_thread():
         if not os.path.exists(market_data_dir): os.makedirs(market_data_dir)
         init_db()
-        # PORTA 5500
         app.run(host='127.0.0.1', port=5500, debug=False, use_reloader=False)
 
     if __name__ == '__main__':
         start_server_thread()
 
 except Exception as e:
-    with open(os.path.join(os.getenv('TEMP'), 'MARKETOS_FATAL.txt'), "w") as f: f.write(str(e))
+    with open("FATAL_ERROR.txt", "w") as f: f.write(str(e))
