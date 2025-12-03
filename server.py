@@ -33,15 +33,10 @@ try:
     def init_db():
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        
-        # Tabelle Prodotti e Log
         c.execute('''CREATE TABLE IF NOT EXISTS products (code TEXT PRIMARY KEY, name TEXT, price REAL, cost REAL, stock INTEGER, originalPrice REAL, isWeighable INTEGER DEFAULT 0, category TEXT)''')
         c.execute('''CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, type TEXT, total REAL, items_json TEXT)''')
-        
-        # Tabella Categorie
         c.execute('''CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE)''')
 
-        # Popola Default se vuota
         c.execute("SELECT count(*) FROM categories")
         if c.fetchone()[0] == 0:
             default_cats = ["Generale", "Frutta", "Verdura", "Panetteria", "Macelleria", "Scatolame", "Bevande"]
@@ -139,7 +134,23 @@ try:
         conn.close()
         return jsonify({"success": True})
 
-    # --- API LOGS ---
+    # --- API LOGS (Analytics) ---
+    @app.route('/api/logs', methods=['GET'])
+    def get_logs():
+        conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        # Scarica ultimi 5000 movimenti per calcoli statistici
+        c.execute("SELECT * FROM logs ORDER BY date DESC LIMIT 5000")
+        rows = c.fetchall()
+        logs = []
+        for row in rows:
+            r = dict(row)
+            if r['items_json']: r['items'] = json.loads(r['items_json'])
+            logs.append(r)
+        conn.close()
+        return jsonify(logs)
+
     @app.route('/api/logs', methods=['POST'])
     def add_log():
         data = request.json
