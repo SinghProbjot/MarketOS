@@ -1,28 +1,30 @@
-; Script Inno Setup per MarketOS Pro
-; Configurato per installazione in AppData (Nessun problema di permessi)
+; Script Inno Setup per MarketOS Pro v7.x
+; Configurato per installazione utente (AppData) + Icona Personalizzata
 
 #define MyAppName "MarketOS Pro"
-#define MyAppVersion "6.0"
+#define MyAppVersion "7.8"
 #define MyAppPublisher "Tuo Nome"
 #define MyAppExeName "AVVIA_MARKET.bat"
 
 [Setup]
 ; ID Univoco dell'applicazione
-AppId={{MARKET-OS-PRO-V6-UUID}}
+AppId={{MARKET-OS-PRO-V7-UUID}}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 
+; --- ICONA DELL'INSTALLER ---
+; Questa è l'icona che avrà il file "MarketOS_Setup.exe"
+; Assicurati di avere "logo.ico" nella stessa cartella di questo script!
+SetupIconFile=logo.ico
+
 ; --- CARTELLA DESTINAZIONE ---
 ; {localappdata} punta a C:\Users\Nome\AppData\Local\
-; Qui abbiamo sempre i permessi di scrittura per gli update!
+; Fondamentale per evitare blocchi dei permessi durante gli aggiornamenti
 DefaultDirName={localappdata}\{#MyAppName}
-
-; Non disabilitiamo la pagina della cartella, così l'utente può cambiarla se vuole,
-; ma il default è sicuro.
 DisableDirPage=no
 
-; L'installer richiede privilegi admin solo per installare le dipendenze globali (Python)
+; Richiede privilegi admin solo per installare le dipendenze (Python)
 PrivilegesRequired=admin
 
 OutputDir=.
@@ -38,24 +40,26 @@ Name: "italian"; MessagesFile: "compiler:Languages\Italian.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-; I file del programma (Assicurati che siano nella stessa cartella quando compili)
+; Copia tutti i file necessari
 Source: "market_os.html"; DestDir: "{app}"; Flags: ignoreversion
 Source: "server.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "desktop_app.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "updater.py"; DestDir: "{app}"; Flags: ignoreversion
-
-; --- FIX FONDAMENTALE QUI SOTTO ---
-; Copia "version.json" (sorgente) ma lo rinomina in "local_version.json" (destinazione)
 Source: "version.json"; DestDir: "{app}"; DestName: "local_version.json"; Flags: ignoreversion
-
 Source: "AVVIA_MARKET.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "install_env.bat"; DestDir: "{app}"; Flags: ignoreversion
 
+; --- FIX ICONA ---
+; Importante: Copiamo il file .ico nella cartella del programma
+Source: "logo.ico"; DestDir: "{app}"; Flags: ignoreversion
+
 [Icons]
 ; Icona nel Menu Start
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\server.py"; IconIndex: 0
+; Ora punta esplicitamente a logo.ico invece che a server.py
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\logo.ico"
+
 ; Icona sul Desktop
-Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\server.py"; IconIndex: 0
+Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\logo.ico"
 
 [Run]
 ; 1. Installa le dipendenze (Python + Librerie)
