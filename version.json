@@ -1,17 +1,22 @@
 {
-  "latest_version": "6.1",
-  "release_date": "2023-10-27",
+  "latest_version": "7.6",
+  "release_date": "2023-10-28",
   "download_url": "", 
   "history": [
     {
-      "version": "6.1",
+      "version": "7.6",
+      "date": "2023-10-28",
+      "changelog": "- Fixed UI glitches (icons distortion and layout overflow)\n- Unified Settings Dashboard with tabbed database selection\n- Added Category Management system\n- General stability improvements and bug fixes"
+    },
+    {
+      "version": "7.5",
       "date": "2023-10-27",
-      "changelog": "- Nuova grafica Dark Mode\n- Risolto bug carrello"
+      "changelog": "- Added Firebase Cloud Database support\n- New modern UI with dark sidebar"
     },
     {
       "version": "6.0",
       "date": "2023-10-20",
-      "changelog": "- Rilascio iniziale\n- Gestione pesi"
+      "changelog": "- Initial release with Local/Server mode support"
     }
   ]
 }
