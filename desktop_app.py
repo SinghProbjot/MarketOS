@@ -5,18 +5,29 @@ import sys
 import urllib.request
 import os
 import traceback
-import server # Importa il server locale
+import platform # Necessario per l'OS
+import server   # Importa il server locale
 
 # --- CONFIGURAZIONE ---
 PORT = 5500
 SERVER_URL = f'http://127.0.0.1:{PORT}'
 
-# Percorso Sicuro per i Log (AppData)
-app_data_dir = os.getenv('APPDATA')
-log_dir = os.path.join(app_data_dir, 'MarketOS')
+# --- PERCORSI LOG CROSS-PLATFORM ---
+system_os = platform.system()
+base_log_dir = ''
+
+if system_os == 'Windows':
+    base_log_dir = os.getenv('APPDATA')
+elif system_os == 'Darwin': # macOS
+    base_log_dir = os.path.expanduser('~/Library/Application Support')
+else: # Linux
+    base_log_dir = os.path.expanduser('~/.local/share')
+
+log_dir = os.path.join(base_log_dir, 'MarketOS')
+
 if not os.path.exists(log_dir):
     try: os.makedirs(log_dir)
-    except: log_dir = '.' 
+    except: log_dir = '.' # Fallback locale
 
 LOG_FILE = os.path.join(log_dir, 'startup_log.txt')
 
@@ -61,18 +72,18 @@ if __name__ == '__main__':
         try: os.remove(LOG_FILE)
         except: pass
 
-    log(f"--- AVVIO MARKETOS (Log in: {LOG_FILE}) ---")
+    log(f"--- AVVIO MARKETOS su {system_os} (Log: {LOG_FILE}) ---")
 
-    # 1. Lancia il Server in background
+    # 1. Lancia il Server
     t = threading.Thread(target=start_flask)
     t.daemon = True
     t.start()
 
-    # 2. Aspetta che il server sia vivo
+    # 2. Aspetta il server
     if wait_for_server(SERVER_URL):
         try:
             log("Creazione finestra webview...")
-            # VERSIONE SENZA PARAMETRO 'ICON' PER MASSIMA COMPATIBILITÀ
+            # Senza icona specifica per compatibilità Mac/Linux immediata
             window = webview.create_window(
                 'MarketOS Pro', 
                 SERVER_URL, 
@@ -82,18 +93,28 @@ if __name__ == '__main__':
                 text_select=False
             )
             
-            # Colleghiamo l'evento di chiusura
             window.events.closed += on_closed
             
             log("Webview start...")
             webview.start()
             
         except Exception as e:
-            log(f"ERRORE GUI CRITICO: {e}\n{traceback.format_exc()}")
-            import ctypes
-            ctypes.windll.user32.MessageBoxW(0, f"Errore Grafico:\n{e}", "Errore MarketOS", 16)
+            msg = f"Errore Grafico:\n{e}\n{traceback.format_exc()}"
+            log(msg)
+            # Popup di errore specifico per OS
+            if system_os == 'Windows':
+                import ctypes
+                ctypes.windll.user32.MessageBoxW(0, msg, "Errore MarketOS", 16)
+            else:
+                print("CRITICAL GUI ERROR:", msg)
     else:
+        msg = f"Il server non risponde sulla porta {PORT}.\nControlla il file di log in:\n{LOG_FILE}"
         log("Chiusura per mancata risposta server.")
-        import ctypes
-        ctypes.windll.user32.MessageBoxW(0, f"Il server non risponde sulla porta {PORT}.\nControlla il file di log in:\n{LOG_FILE}", "Errore Avvio", 16)
+        
+        if system_os == 'Windows':
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(0, msg, "Errore Avvio", 16)
+        else:
+            print("CRITICAL STARTUP ERROR:", msg)
+        
         sys.exit(1)

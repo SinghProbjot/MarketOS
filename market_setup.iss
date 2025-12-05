@@ -2,7 +2,7 @@
 ; Configurato per installazione utente (AppData) + Icona Personalizzata
 
 #define MyAppName "MarketOS Pro"
-#define MyAppVersion "7.8"
+#define MyAppVersion "7.7"
 #define MyAppPublisher "Tuo Nome"
 #define MyAppExeName "AVVIA_MARKET.bat"
 

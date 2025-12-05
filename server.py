@@ -3,28 +3,48 @@ import json
 import os
 import sys
 import logging
+import platform # Necessario per rilevare l'OS
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
-# CONFIGURAZIONE PERCORSI
-app_data_dir = os.getenv('APPDATA')
-market_data_dir = os.path.join(app_data_dir, 'MarketOS')
+# --- CONFIGURAZIONE PERCORSI CROSS-PLATFORM ---
+system_os = platform.system()
+base_dir = ''
+
+if system_os == 'Windows':
+    base_dir = os.getenv('APPDATA')
+elif system_os == 'Darwin': # macOS
+    base_dir = os.path.expanduser('~/Library/Application Support')
+else: # Linux e altri
+    base_dir = os.path.expanduser('~/.local/share')
+
+# Cartella Dati
+market_data_dir = os.path.join(base_dir, 'MarketOS')
+
+# Crea la cartella se non esiste (con gestione errori permessi)
 if not os.path.exists(market_data_dir):
-    try: os.makedirs(market_data_dir)
-    except: market_data_dir = '.'
+    try:
+        os.makedirs(market_data_dir)
+    except OSError:
+        # Fallback locale se non si hanno i permessi di sistema
+        market_data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+        if not os.path.exists(market_data_dir):
+            os.makedirs(market_data_dir)
 
 DB_FILE = os.path.join(market_data_dir, 'market.db')
 LOG_FILE = os.path.join(market_data_dir, 'server_error.log')
 
+# Configura Logging
 logging.basicConfig(filename=LOG_FILE, level=logging.ERROR, format='%(asctime)s %(levelname)s: %(message)s')
 
+# Configurazione path risorse (per PyInstaller/Freeze)
 if getattr(sys, 'frozen', False):
     template_folder = os.path.join(sys._MEIPASS)
     static_folder = os.path.join(sys._MEIPASS)
 else:
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    template_folder = base_dir
-    static_folder = base_dir
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    template_folder = current_dir
+    static_folder = current_dir
 
 try:
     app = Flask(__name__, static_folder=static_folder, static_url_path='')
@@ -33,10 +53,13 @@ try:
     def init_db():
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
+        # Tabelle Prodotti e Log
         c.execute('''CREATE TABLE IF NOT EXISTS products (code TEXT PRIMARY KEY, name TEXT, price REAL, cost REAL, stock INTEGER, originalPrice REAL, isWeighable INTEGER DEFAULT 0, category TEXT)''')
         c.execute('''CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, type TEXT, total REAL, items_json TEXT)''')
+        # Tabella Categorie
         c.execute('''CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE)''')
 
+        # Popola Default se vuota
         c.execute("SELECT count(*) FROM categories")
         if c.fetchone()[0] == 0:
             default_cats = ["Generale", "Frutta", "Verdura", "Panetteria", "Macelleria", "Scatolame", "Bevande"]
@@ -134,13 +157,12 @@ try:
         conn.close()
         return jsonify({"success": True})
 
-    # --- API LOGS (Analytics) ---
+    # --- API LOGS ---
     @app.route('/api/logs', methods=['GET'])
     def get_logs():
         conn = sqlite3.connect(DB_FILE)
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
-        # Scarica ultimi 5000 movimenti per calcoli statistici
         c.execute("SELECT * FROM logs ORDER BY date DESC LIMIT 5000")
         rows = c.fetchall()
         logs = []
@@ -164,10 +186,14 @@ try:
     def start_server_thread():
         if not os.path.exists(market_data_dir): os.makedirs(market_data_dir)
         init_db()
+        # Porta 5500 per evitare conflitti
         app.run(host='127.0.0.1', port=5500, debug=False, use_reloader=False)
 
     if __name__ == '__main__':
         start_server_thread()
 
 except Exception as e:
-    with open(os.path.join(os.getenv('TEMP'), 'MARKETOS_FATAL.txt'), "w") as f: f.write(str(e))
+    # Fallback per log critici su file temporaneo di sistema
+    import tempfile
+    err_file = os.path.join(tempfile.gettempdir(), 'MARKETOS_FATAL.txt')
+    with open(err_file, "w") as f: f.write(str(e))
