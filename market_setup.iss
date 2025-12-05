@@ -1,8 +1,7 @@
-; Script Inno Setup per MarketOS Pro v7.x
-; Configurato per installazione utente (AppData) + Icona Personalizzata
+; Script Inno Setup per MarketOS Pro v8.x
 
 #define MyAppName "MarketOS Pro"
-#define MyAppVersion "7.7"
+#define MyAppVersion "8.0"
 #define MyAppPublisher "Tuo Nome"
 #define MyAppExeName "AVVIA_MARKET.bat"
 
@@ -14,13 +13,10 @@ AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 
 ; --- ICONA DELL'INSTALLER ---
-; Questa è l'icona che avrà il file "MarketOS_Setup.exe"
-; Assicurati di avere "logo.ico" nella stessa cartella di questo script!
 SetupIconFile=logo.ico
 
 ; --- CARTELLA DESTINAZIONE ---
 ; {localappdata} punta a C:\Users\Nome\AppData\Local\
-; Fondamentale per evitare blocchi dei permessi durante gli aggiornamenti
 DefaultDirName={localappdata}\{#MyAppName}
 DisableDirPage=no
 
@@ -55,7 +51,6 @@ Source: "logo.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 ; Icona nel Menu Start
-; Ora punta esplicitamente a logo.ico invece che a server.py
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\logo.ico"
 
 ; Icona sul Desktop
@@ -72,4 +67,4 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}
 ; Pulizia file temporanei alla disinstallazione
 Type: files; Name: "{app}\*.pyc"
 Type: filesandordirs; Name: "{app}\__pycache__"
-; NOTA: Non cancelliamo market.db per sicurezza dei dati.
+; NOTA: Non cancelliamo market.db per sicurezza dei dati
