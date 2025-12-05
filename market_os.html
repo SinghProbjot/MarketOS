@@ -20,7 +20,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js"; 
-        import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc, addDoc, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc, addDoc, query, orderBy, limit, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         window.FB = {
             app: null,
@@ -38,14 +38,14 @@
 
                     window.FB.app = app;
                     window.FB.db = db;
-                    console.log("Firebase Inizializzato Correttamente");
+                    console.log("Firebase Inizializzato");
                     return true;
                 } catch (e) {
                     console.error("Errore Init Firebase", e);
                     return false;
                 }
             },
-            getDocs, collection, doc, setDoc, deleteDoc, addDoc, query, orderBy, limit
+            getDocs, collection, doc, setDoc, deleteDoc, addDoc, query, orderBy, limit, writeBatch
         };
     </script>
     
@@ -107,11 +107,13 @@
                 PieChart: <><path d="M21.21 15.89A10 10 0 1 1 8 2.83" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M22 12A10 10 0 0 0 12 2v10z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></>,
                 DollarSign: <><line x1="12" y1="1" x2="12" y2="23" stroke="currentColor" strokeWidth="2"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke="currentColor" strokeWidth="2"/></>,
                 Calendar: <><rect x="3" y="4" width="18" height="18" rx="2" ry="2" stroke="currentColor" strokeWidth="2"/><line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" strokeWidth="2"/><line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" strokeWidth="2"/><line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" strokeWidth="2"/></>,
-                List: <><line x1="8" y1="6" x2="21" y2="6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><line x1="8" y1="12" x2="21" y2="12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><line x1="8" y1="18" x2="21" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><line x1="3" y1="6" x2="3.01" y2="6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><line x1="3" y1="12" x2="3.01" y2="12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><line x1="3" y1="18" x2="3.01" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></>
+                List: <><line x1="8" y1="6" x2="21" y2="6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><line x1="8" y1="12" x2="21" y2="12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><line x1="8" y1="18" x2="21" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><line x1="3" y1="6" x2="3.01" y2="6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><line x1="3" y1="12" x2="3.01" y2="12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><line x1="3" y1="18" x2="3.01" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></>,
+                Cable: <><path d="M17 21v-2a1 1 0 0 1-1-1v-1a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1a1 1 0 0 1-1 1v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M7 21v-2a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v1a1 1 0 0 0 1 1v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M12 21v-2a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v1a1 1 0 0 0 1 1v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M12 3a3 3 0 0 1 3 3v10" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M12 3a3 3 0 0 0-3 3v10" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></>
             };
             return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={`${className} shrink-0`}>{icons[name]}</svg>;
         };
 
+        // --- MODAL E UTILS ---
         const Modal = ({ title, onClose, children }) => (
             <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
                 <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
@@ -166,7 +168,7 @@
                     for(let i=0; i<3; i++) {
                         try {
                             const res = await fetch(`${url}/api/products`);
-                            if(!res.ok) throw new Error("Server Error: " + res.status);
+                            if(!res.ok) throw new Error("Server Error");
                             return await res.json();
                         } catch(e) {
                             if (i === 2) throw e;
@@ -249,21 +251,49 @@
             },
             async migrateLocalToCloud(config) {
                 if (!window.FB || !window.FB.db) throw new Error("Firebase non connesso");
-                
                 const localProds = JSON.parse(localStorage.getItem('products')) || [];
                 const localLogs = JSON.parse(localStorage.getItem('logs')) || [];
-                
                 let count = 0;
                 for (let p of localProds) {
                     await window.FB.setDoc(window.FB.doc(window.FB.db, "products", p.code), p);
                     count++;
                 }
-
                 for (let l of localLogs) {
                     await window.FB.addDoc(window.FB.collection(window.FB.db, "logs"), l);
                 }
-
                 return count;
+            },
+
+            // --- NUOVE API BILANCIA ---
+            async getScaleWeight(config) {
+                const url = getBaseUrl(config);
+                try {
+                    const res = await fetch(`${url}/api/scale/read`);
+                    if (!res.ok) return null;
+                    return await res.json();
+                } catch (e) {
+                    return null;
+                }
+            },
+            async setScaleConfig(config, port, baudrate) {
+                const url = getBaseUrl(config);
+                try {
+                    await fetch(`${url}/api/scale/config`, { 
+                        method: 'POST', 
+                        headers: {'Content-Type': 'application/json'}, 
+                        body: JSON.stringify({ port, baudrate }) 
+                    });
+                } catch (e) {
+                    throw new Error("Impossibile salvare configurazione bilancia (Server offline?)");
+                }
+            },
+            async getScaleConfig(config) {
+                const url = getBaseUrl(config);
+                try {
+                    const res = await fetch(`${url}/api/scale/config`);
+                    if (!res.ok) return {};
+                    return await res.json();
+                } catch { return {}; }
             }
         };
 
@@ -305,16 +335,33 @@
         };
 
         // --- VISTE ---
-        const POSView = ({ products, cart, setCart, onCheckout }) => {
+        const POSView = ({ products, cart, setCart, onCheckout, config }) => {
             const [input, setInput] = useState(""); 
             const [searchMode, setSearchMode] = useState(false); 
             const [searchTerm, setSearchTerm] = useState(""); 
             const [weightItem, setWeightItem] = useState(null); 
             const [weightInput, setWeightInput] = useState(""); 
+            const [liveWeight, setLiveWeight] = useState(null); 
             const inputRef = useRef(null);
+            const scaleInterval = useRef(null);
 
             useEffect(() => { if (!weightItem && !searchMode) inputRef.current?.focus(); }, [cart, weightItem, searchMode]);
             
+            useEffect(() => {
+                if (weightItem) {
+                    setLiveWeight(null);
+                    scaleInterval.current = setInterval(async () => {
+                        const data = await DataAdapter.getScaleWeight(config);
+                        if (data && !data.error && data.weight > 0) {
+                            setLiveWeight(data.weight);
+                        }
+                    }, 500); 
+                } else {
+                    if (scaleInterval.current) clearInterval(scaleInterval.current);
+                }
+                return () => { if (scaleInterval.current) clearInterval(scaleInterval.current); };
+            }, [weightItem, config]);
+
             const handleScan = (e) => { if (e.key === 'Enter') { if(!input.trim()) return; processItemAdd(input.trim()); setInput(""); } };
             
             const processItemAdd = (code) => { 
@@ -331,7 +378,13 @@
                 else setCart([...cart, {...p, qty: q}]); 
             };
             
-            const handleWeightConfirm = (e) => { if (e.key === 'Enter' || e.type === 'click') { const w = parseFloat(weightInput.replace(',', '.')); if (!w || w <= 0) return alert("Peso non valido"); addToCart(weightItem, w); setWeightItem(null); setSearchMode(false); } };
+            const handleWeightConfirm = (w) => { 
+                const finalW = parseFloat(w); 
+                if (!finalW || finalW <= 0) return alert("Peso non valido"); 
+                addToCart(weightItem, finalW); 
+                setWeightItem(null); 
+                setSearchMode(false); 
+            };
             
             const total = cart.reduce((a, b) => a + (b.price * b.qty), 0); 
             const filtered = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -396,17 +449,31 @@
 
                     {weightItem && (
                         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-                            <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm text-center animate-in fade-in zoom-in duration-200">
-                                <div className="w-20 h-20 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-6 text-orange-500 shadow-inner"><Icon name="Scale" size={40}/></div>
-                                <h3 className="text-2xl font-bold mb-2 text-slate-800">{weightItem.name}</h3>
-                                <p className="text-slate-400 text-sm mb-8">Inserisci il peso netto in Kg</p>
-                                <div className="relative mb-8">
-                                    <input type="number" step="0.001" value={weightInput} onChange={e => setWeightInput(e.target.value)} onKeyDown={e => {if(e.key==='Enter') { const w=parseFloat(weightInput); if(w>0){addToCart(weightItem, w); setWeightItem(null);} }}} className="w-full text-center text-6xl font-mono font-bold border-b-4 border-slate-100 focus:border-orange-500 outline-none pb-2 bg-transparent text-slate-800" placeholder="0.000" autoFocus />
-                                    <span className="absolute right-0 bottom-4 text-slate-400 font-bold">kg</span>
+                            <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm text-center animate-in fade-in zoom-in duration-200 relative">
+                                <button onClick={() => setWeightItem(null)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><Icon name="X" size={24}/></button>
+                                
+                                <div className="w-20 h-20 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-4 text-orange-500 shadow-inner">
+                                    <Icon name="Scale" size={40}/>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <button onClick={() => setWeightItem(null)} className="py-4 text-slate-500 font-bold hover:bg-slate-50 rounded-xl transition-colors">Annulla</button>
-                                    <button onClick={() => { const w=parseFloat(weightInput); if(w>0){addToCart(weightItem, w); setWeightItem(null);} }} className="py-4 bg-orange-500 text-white font-bold rounded-xl hover:bg-orange-400 shadow-lg shadow-orange-200 transition-all">Conferma</button>
+                                <h3 className="text-2xl font-bold mb-1 text-slate-800">{weightItem.name}</h3>
+                                <p className="text-slate-400 text-sm mb-6">Inserisci il peso netto</p>
+                                
+                                {/* LIVE WEIGHT DISPLAY */}
+                                {liveWeight !== null ? (
+                                    <div className="mb-6 animate-pulse-ring bg-green-50 border-2 border-green-500 text-green-700 p-4 rounded-2xl">
+                                        <div className="text-xs font-bold uppercase tracking-wide mb-1">Bilancia Connessa</div>
+                                        <div className="text-5xl font-mono font-bold">{liveWeight.toFixed(3)} <span className="text-lg">kg</span></div>
+                                        <button onClick={() => handleWeightConfirm(liveWeight)} className="mt-3 w-full py-2 bg-green-600 text-white font-bold rounded-lg hover:bg-green-500">USA QUESTO PESO</button>
+                                    </div>
+                                ) : (
+                                    <div className="mb-6 relative">
+                                        <input type="number" step="0.001" value={weightInput} onChange={e => setWeightInput(e.target.value)} onKeyDown={e => {if(e.key==='Enter') handleWeightConfirm(e.target.value)}} className="w-full text-center text-6xl font-mono font-bold border-b-4 border-slate-100 focus:border-orange-500 outline-none pb-2 bg-transparent text-slate-800" placeholder="0.000" autoFocus />
+                                        <span className="absolute right-0 bottom-4 text-slate-400 font-bold">kg</span>
+                                    </div>
+                                )}
+                                
+                                <div className="grid grid-cols-1 gap-4">
+                                    <button onClick={() => handleWeightConfirm(weightInput)} className="py-4 bg-orange-500 text-white font-bold rounded-xl hover:bg-orange-400 shadow-lg shadow-orange-200 transition-all w-full">CONFERMA MANUALE</button>
                                 </div>
                             </div>
                         </div>
@@ -527,231 +594,53 @@
             );
         };
 
-        const SettingsView = ({ config, setConfig, serverStatus, categories, addCat, delCat, onMigrate }) => (
-            <div className="max-w-2xl mx-auto p-8 flex flex-col lg:flex-row gap-6 h-full overflow-y-auto">
-                <div className="flex-1 space-y-6">
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                        <h2 className="text-xl font-bold text-slate-800 mb-4">Generale</h2>
-                        <div>
-                            <label className="block text-xs font-bold text-slate-400 uppercase">Nome Negozio</label>
-                            <input type="text" value={config.shopName} onChange={e => setConfig({...config, shopName: e.target.value})} className="w-full border p-3 rounded-xl outline-none focus:border-blue-500 font-bold text-slate-700" />
-                        </div>
-                    </div>
-
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                        <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
-                            <Icon name="Settings" className="text-slate-400"/> Configurazione Database
-                        </h2>
-
-                        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200 mb-6">
-                            <span className="text-sm text-slate-500 font-medium">Stato Connessione</span>
-                            <span className={`font-bold px-3 py-1 rounded-full text-xs ${serverStatus === 'online' ? 'bg-green-100 text-green-700' : serverStatus === 'local' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
-                                {serverStatus === 'online' ? 'CONNESSO' : serverStatus === 'local' ? 'LOCALE' : 'OFFLINE'}
-                            </span>
-                        </div>
-
-                        <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Modalità di Archiviazione</label>
-                        <div className="grid grid-cols-3 gap-2 mb-6">
-                            {['local', 'server', 'firebase'].map(mode => (
-                                <button 
-                                    key={mode}
-                                    onClick={() => setConfig({...config, storageMode: mode})} 
-                                    className={`p-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center gap-2 ${config.storageMode === mode ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
-                                >
-                                    <Icon name={mode === 'local' ? 'Box' : mode === 'server' ? 'Server' : 'Cloud'} size={20}/>
-                                    {mode.toUpperCase()}
-                                </button>
-                            ))}
-                        </div>
-
-                        {config.storageMode === 'server' && (
-                            <div className="animate-in fade-in slide-in-from-top-2">
-                                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Indirizzo Server Locale (Python)</label>
-                                <input type="text" value={config.serverUrl} onChange={e => setConfig({...config, serverUrl: e.target.value})} className="w-full border p-3 rounded-xl font-mono text-sm outline-none focus:border-blue-500" placeholder="http://127.0.0.1:5500" />
-                            </div>
-                        )}
-
-                        {config.storageMode === 'firebase' && (
-                            <div className="animate-in fade-in slide-in-from-top-2 space-y-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Configurazione Firebase (JSON)</label>
-                                    <textarea 
-                                        className="w-full border p-3 rounded-xl text-xs font-mono h-48 outline-none focus:border-orange-500 resize-y" 
-                                        placeholder='{ "apiKey": "...", "authDomain": "..." }'
-                                        value={typeof config.firebaseConfig === 'object' ? JSON.stringify(config.firebaseConfig, null, 2) : config.firebaseConfig || ''}
-                                        onChange={e => {
-                                            try {
-                                                const parsed = JSON.parse(e.target.value);
-                                                setConfig({...config, firebaseConfig: parsed});
-                                                if(window.FB && window.FB.init(parsed)) alert("Firebase Connesso!");
-                                            } catch(err) {
-                                                setConfig({...config, firebaseConfig: e.target.value});
-                                            }
-                                        }}
-                                    />
-                                    <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
-                                        Vai sulla Console Firebase &gt; Impostazioni Progetto &gt; Generali &gt; Le tue app &gt; Configurazione. 
-                                        Copia l'oggetto JSON e incollalo qui.
-                                    </p>
-                                </div>
-
-                                <button 
-                                    onClick={onMigrate}
-                                    className="w-full py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow-lg flex items-center justify-center gap-2 transition-all"
-                                >
-                                    <Icon name="Cloud" /> 📤 CARICA DATI LOCALI SU CLOUD
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                <div className="w-full lg:w-80 shrink-0">
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 h-full flex flex-col">
-                        <h3 className="font-bold text-lg mb-4 text-slate-700">Categorie</h3>
-                        <div className="flex gap-2 mb-4">
-                            <input id="newCat" placeholder="Nuova..." className="w-full border p-2 rounded-lg text-sm outline-none focus:border-blue-500"/>
-                            <button onClick={() => { const el=document.getElementById('newCat'); if(el.value) { addCat(el.value); el.value=''; }}} className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700"><Icon name="Plus" size={16}/></button>
-                        </div>
-                        <div className="flex-1 overflow-y-auto space-y-2 max-h-96 lg:max-h-none pr-1">
-                            {categories.map(c => (
-                                <div key={c.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg text-sm group hover:bg-slate-100 transition-colors">
-                                    <span className="font-medium text-slate-700">{c.name}</span>
-                                    <button onClick={() => delCat(c.id)} className="text-slate-400 hover:text-red-500 transition-colors"><Icon name="Trash" size={14}/></button>
-                                </div>
-                            ))}
-                            {categories.length === 0 && <p className="text-xs text-slate-400 text-center py-4">Nessuna categoria.</p>}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
-
-        const DashboardView = ({ config, refreshTrigger }) => {
-            const [stats, setStats] = useState({ dailyTotal: 0, dailyProfit: 0, totalTx: 0, weeklyData: [] });
-            const [loading, setLoading] = useState(true);
+        const SettingsView = ({ config, setConfig, serverStatus, categories, addCat, delCat, onMigrate }) => {
+            // Stato locale per la config della bilancia
+            const [scalePort, setScalePort] = useState("");
+            const [scaleBaud, setScaleBaud] = useState(9600);
 
             useEffect(() => {
-                const loadStats = async () => {
-                    setLoading(true);
-                    try {
-                        const logs = await DataAdapter.getLogs(config);
-                        const today = new Date().toISOString().split('T')[0];
-                        
-                        const todayLogs = logs.filter(l => l.date.startsWith(today));
-                        const dailyTotal = todayLogs.reduce((acc, l) => acc + l.total, 0);
-                        const totalTx = todayLogs.length;
+                // Carica config bilancia all'apertura
+                if(config.storageMode !== 'local') {
+                    DataAdapter.getScaleConfig(config).then(c => {
+                        if(c.port) setScalePort(c.port);
+                        if(c.baudrate) setScaleBaud(c.baudrate);
+                    });
+                }
+            }, []);
 
-                        let dailyProfit = 0;
-                        todayLogs.forEach(log => {
-                            log.items.forEach(item => {
-                                const cost = item.cost || 0;
-                                dailyProfit += (item.price - cost) * item.qty;
-                            });
-                        });
-
-                        const last7Days = [...Array(7)].map((_, i) => {
-                            const d = new Date();
-                            d.setDate(d.getDate() - i);
-                            return d.toISOString().split('T')[0];
-                        }).reverse();
-
-                        const weeklyData = last7Days.map(date => {
-                            const dayLogs = logs.filter(l => l.date.startsWith(date));
-                            const dayTotal = dayLogs.reduce((acc, l) => acc + l.total, 0);
-                            let dayProfit = 0;
-                            dayLogs.forEach(log => {
-                                log.items.forEach(item => {
-                                    dayProfit += ((item.price || 0) - (item.cost || 0)) * item.qty;
-                                });
-                            });
-                            return { name: date.slice(5), vendite: dayTotal, profitto: dayProfit };
-                        });
-
-                        setStats({ dailyTotal, dailyProfit, totalTx, weeklyData });
-                    } catch (e) { console.error(e); }
-                    setLoading(false);
-                };
-                loadStats();
-            }, [refreshTrigger, config]);
-            
-            const renderCharts = () => {
-                if (!window.Recharts) return <div className="flex items-center justify-center h-full text-slate-400">Caricamento Grafici...</div>;
-                const { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = window.Recharts;
-                
-                return (
-                    <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={stats.weeklyData}>
-                            <defs>
-                                <linearGradient id="colorVendite" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
-                                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                                </linearGradient>
-                                <linearGradient id="colorProfitto" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
-                                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                                </linearGradient>
-                            </defs>
-                            <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
-                            <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `€${val}`}/>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                            <Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'}} />
-                            <Area type="monotone" dataKey="vendite" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorVendite)" name="Incasso" />
-                            <Area type="monotone" dataKey="profitto" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorProfitto)" name="Utile" />
-                        </AreaChart>
-                    </ResponsiveContainer>
-                );
+            const saveScale = async () => {
+                try {
+                    await DataAdapter.setScaleConfig(config, scalePort, scaleBaud);
+                    alert("Configurazione Bilancia Salvata");
+                } catch(e) {
+                    alert(e.message);
+                }
             };
 
-            return (
-                <div className="h-full flex flex-col p-8 gap-8 overflow-y-auto">
-                    <div className="flex justify-between items-center">
-                        <h2 className="text-3xl font-bold text-slate-800">Dashboard Finanziaria</h2>
-                        <div className="text-sm text-slate-500 font-mono">{new Date().toLocaleDateString()}</div>
+            return (<div className="max-w-2xl mx-auto p-8 flex flex-col lg:flex-row gap-6 h-full overflow-y-auto"><div className="flex-1 space-y-6"><div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200"><h2 className="text-xl font-bold text-slate-800 mb-4">Generale</h2><div><label className="block text-xs font-bold text-slate-400 uppercase mb-1">Nome Negozio</label><input type="text" value={config.shopName} onChange={e => setConfig({...config, shopName: e.target.value})} className="w-full border p-3 rounded-xl outline-none focus:border-blue-500 font-bold text-slate-700" /></div></div><div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200"><h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2"><Icon name="Settings" className="text-slate-400"/> Configurazione Database</h2><div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200 mb-6"><span className="text-sm text-slate-500 font-medium">Stato Connessione</span><span className={`font-bold px-3 py-1 rounded-full text-xs ${serverStatus === 'online' ? 'bg-green-100 text-green-700' : serverStatus === 'local' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>{serverStatus === 'online' ? 'CONNESSO' : serverStatus === 'local' ? 'LOCALE' : 'OFFLINE'}</span></div><label className="block text-xs font-bold text-slate-400 uppercase mb-2">Modalità di Archiviazione</label><div className="grid grid-cols-3 gap-2 mb-6">{['local', 'server', 'firebase'].map(mode => (<button key={mode} onClick={() => setConfig({...config, storageMode: mode})} className={`p-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center gap-2 ${config.storageMode === mode ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}><Icon name={mode === 'local' ? 'Box' : mode === 'server' ? 'Server' : 'Cloud'} size={20}/>{mode.toUpperCase()}</button>))}</div>{config.storageMode === 'server' && (<div className="animate-in fade-in slide-in-from-top-2"><label className="block text-xs font-bold text-slate-400 uppercase mb-1">Indirizzo Server Locale (Python)</label><input type="text" value={config.serverUrl} onChange={e => setConfig({...config, serverUrl: e.target.value})} className="w-full border p-3 rounded-xl font-mono text-sm outline-none focus:border-blue-500" placeholder="http://127.0.0.1:5500" /></div>)}{config.storageMode === 'firebase' && (<div className="animate-in fade-in slide-in-from-top-2 space-y-4"><div><label className="block text-xs font-bold text-slate-400 uppercase mb-1">Configurazione Firebase (JSON)</label><textarea className="w-full border p-3 rounded-xl text-xs font-mono h-48 outline-none focus:border-orange-500 resize-y" placeholder='{ "apiKey": "...", "authDomain": "..." }' value={typeof config.firebaseConfig === 'object' ? JSON.stringify(config.firebaseConfig, null, 2) : config.firebaseConfig || ''} onChange={e => { try { const parsed = JSON.parse(e.target.value); setConfig({...config, firebaseConfig: parsed}); if(window.FB && window.FB.init(parsed)) alert("Firebase Connesso!"); } catch(err) { setConfig({...config, firebaseConfig: e.target.value}); } }} /><p className="text-[10px] text-slate-400 mt-2 leading-relaxed">Vai sulla Console Firebase &gt; Impostazioni Progetto &gt; Generali &gt; Le tue app &gt; Configurazione. Copia l'oggetto JSON e incollalo qui.</p></div><button onClick={onMigrate} className="w-full py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow-lg flex items-center justify-center gap-2 transition-all"><Icon name="Cloud" /> 📤 CARICA DATI LOCALI SU CLOUD</button></div>)}</div>
+                    
+                    {/* SEZIONE PERIFERICHE (BILANCIA) */}
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                        <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2"><Icon name="Scale" className="text-slate-400"/> Periferiche (Bilancia)</h2>
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div><label className="block text-xs font-bold text-slate-400 uppercase mb-1">Porta Seriale</label><input placeholder="es. COM3 o /dev/ttyUSB0" value={scalePort} onChange={e => setScalePort(e.target.value)} className="w-full border p-3 rounded-xl outline-none focus:border-blue-500 font-mono text-sm"/></div>
+                            <div><label className="block text-xs font-bold text-slate-400 uppercase mb-1">Baud Rate</label><input type="number" value={scaleBaud} onChange={e => setScaleBaud(parseInt(e.target.value))} className="w-full border p-3 rounded-xl outline-none focus:border-blue-500 font-mono text-sm"/></div>
+                        </div>
+                        <button onClick={saveScale} className="w-full py-3 bg-slate-800 text-white font-bold rounded-xl hover:bg-slate-700 transition-colors">Salva Configurazione Bilancia</button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col relative overflow-hidden">
-                            <div className="absolute top-0 right-0 p-4 opacity-10"><Icon name="DollarSign" size={60} className="text-green-500"/></div>
-                            <span className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-1">Incasso Oggi</span>
-                            <span className="text-4xl font-bold text-slate-800">€{stats.dailyTotal.toFixed(2)}</span>
-                            <div className="mt-4 text-xs font-bold text-green-600 flex items-center gap-1 bg-green-50 w-fit px-2 py-1 rounded-lg"><Icon name="TrendingUp" size={14}/> Aggiornato Live</div>
-                        </div>
-                        <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-6 rounded-3xl shadow-lg shadow-blue-900/20 flex flex-col text-white relative overflow-hidden">
-                             <div className="absolute top-0 right-0 p-4 opacity-20"><Icon name="PieChart" size={60} className="text-white"/></div>
-                            <span className="text-sm font-bold text-blue-100 uppercase tracking-wider mb-1">Utile Netto Oggi</span>
-                            <span className="text-4xl font-bold">€{stats.dailyProfit.toFixed(2)}</span>
-                            <div className="mt-4 text-xs font-bold text-blue-200 flex items-center gap-1 bg-white/10 w-fit px-2 py-1 rounded-lg">Margine: {stats.dailyTotal > 0 ? ((stats.dailyProfit/stats.dailyTotal)*100).toFixed(1) : 0}%</div>
-                        </div>
-                        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col relative overflow-hidden">
-                             <div className="absolute top-0 right-0 p-4 opacity-10"><Icon name="ShoppingCart" size={60} className="text-orange-500"/></div>
-                            <span className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-1">Scontrini</span>
-                            <span className="text-4xl font-bold text-slate-800">{stats.totalTx}</span>
-                            <div className="mt-4 text-xs font-bold text-slate-500 flex items-center gap-1 bg-slate-100 w-fit px-2 py-1 rounded-lg">Transazioni totali</div>
-                        </div>
-                    </div>
-
-                    <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex-1 min-h-[300px] flex flex-col">
-                        <h3 className="font-bold text-lg text-slate-700 mb-6 flex items-center gap-2"><Icon name="TrendingUp"/> Andamento Settimanale</h3>
-                        <div className="flex-1 w-full h-full">
-                            {renderCharts()}
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {['Analisi Prodotti', 'Registro IVA', 'Vendite Orarie', 'Export Excel'].map((report, i) => (
-                            <button key={i} className="p-4 bg-white border border-slate-200 rounded-xl hover:border-blue-500 hover:shadow-md transition-all text-left group">
-                                <div className="bg-slate-100 w-10 h-10 rounded-lg flex items-center justify-center mb-3 group-hover:bg-blue-100 text-slate-500 group-hover:text-blue-600 transition-colors"><Icon name="Box" size={20}/></div>
-                                <div className="font-bold text-slate-700 text-sm">{report}</div>
-                                <div className="text-[10px] text-slate-400 mt-1">Clicca per generare</div>
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            );
+                </div><div className="w-full lg:w-80 shrink-0"><div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 h-full flex flex-col"><h3 className="font-bold text-lg mb-4 text-slate-700">Categorie</h3><div className="flex gap-2 mb-4"><input id="newCat" placeholder="Nuova..." className="w-full border p-2 rounded-lg text-sm outline-none focus:border-blue-500"/><button onClick={() => { const el=document.getElementById('newCat'); if(el.value) { addCat(el.value); el.value=''; }}} className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700"><Icon name="Plus" size={16}/></button></div><div className="flex-1 overflow-y-auto space-y-2 max-h-96 lg:max-h-none pr-1">{categories.map(c => (<div key={c.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg text-sm group hover:bg-slate-100 transition-colors"><span className="font-medium text-slate-700">{c.name}</span><button onClick={() => delCat(c.id)} className="text-slate-400 hover:text-red-500 transition-colors"><Icon name="Trash" size={14}/></button></div>))}</div></div></div></div>);
         };
 
-        // --- APP MAIN ---
+        const DashboardView = ({ config, refreshTrigger }) => {
+            const [stats, setStats] = useState({ dailyTotal: 0, dailyProfit: 0, totalTx: 0, weeklyData: [] }); const [loading, setLoading] = useState(true);
+            useEffect(() => { const loadStats = async () => { setLoading(true); try { const logs = await DataAdapter.getLogs(config); const today = new Date().toISOString().split('T')[0]; const todayLogs = logs.filter(l => l.date.startsWith(today)); const dailyTotal = todayLogs.reduce((acc, l) => acc + l.total, 0); const totalTx = todayLogs.length; let dailyProfit = 0; todayLogs.forEach(log => { log.items.forEach(item => { const cost = item.cost || 0; dailyProfit += (item.price - cost) * item.qty; }); }); const last7Days = [...Array(7)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return d.toISOString().split('T')[0]; }).reverse(); const weeklyData = last7Days.map(date => { const dayLogs = logs.filter(l => l.date.startsWith(date)); const dayTotal = dayLogs.reduce((acc, l) => acc + l.total, 0); let dayProfit = 0; dayLogs.forEach(log => { log.items.forEach(item => { dayProfit += ((item.price || 0) - (item.cost || 0)) * item.qty; }); }); return { name: date.slice(5), vendite: dayTotal, profitto: dayProfit }; }); setStats({ dailyTotal, dailyProfit, totalTx, weeklyData }); } catch (e) { console.error(e); } setLoading(false); }; loadStats(); }, [refreshTrigger, config]);
+            const renderCharts = () => { if (!window.Recharts) return <div className="flex items-center justify-center h-full text-slate-400">Caricamento Grafici...</div>; const { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = window.Recharts; return (<ResponsiveContainer width="100%" height="100%"><AreaChart data={stats.weeklyData}><defs><linearGradient id="colorVendite" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient><linearGradient id="colorProfitto" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient></defs><XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} /><YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `€${val}`}/><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'}} /><Area type="monotone" dataKey="vendite" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorVendite)" name="Incasso" /><Area type="monotone" dataKey="profitto" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorProfitto)" name="Utile" /></AreaChart></ResponsiveContainer>); };
+            return (<div className="h-full flex flex-col p-8 gap-8 overflow-y-auto"><div className="flex justify-between items-center"><h2 className="text-3xl font-bold text-slate-800">Dashboard Finanziaria</h2><div className="text-sm text-slate-500 font-mono">{new Date().toLocaleDateString()}</div></div><div className="grid grid-cols-1 md:grid-cols-3 gap-6"><div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col relative overflow-hidden"><div className="absolute top-0 right-0 p-4 opacity-10"><Icon name="DollarSign" size={60} className="text-green-500"/></div><span className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-1">Incasso Oggi</span><span className="text-4xl font-bold text-slate-800">€{stats.dailyTotal.toFixed(2)}</span><div className="mt-4 text-xs font-bold text-green-600 flex items-center gap-1 bg-green-50 w-fit px-2 py-1 rounded-lg"><Icon name="TrendingUp" size={14}/> Aggiornato Live</div></div><div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-6 rounded-3xl shadow-lg shadow-blue-900/20 flex flex-col text-white relative overflow-hidden"><div className="absolute top-0 right-0 p-4 opacity-20"><Icon name="PieChart" size={60} className="text-white"/></div><span className="text-sm font-bold text-blue-100 uppercase tracking-wider mb-1">Utile Netto Oggi</span><span className="text-4xl font-bold">€{stats.dailyProfit.toFixed(2)}</span><div className="mt-4 text-xs font-bold text-blue-200 flex items-center gap-1 bg-white/10 w-fit px-2 py-1 rounded-lg">Margine: {stats.dailyTotal > 0 ? ((stats.dailyProfit/stats.dailyTotal)*100).toFixed(1) : 0}%</div></div><div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col relative overflow-hidden"><div className="absolute top-0 right-0 p-4 opacity-10"><Icon name="ShoppingCart" size={60} className="text-orange-500"/></div><span className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-1">Scontrini</span><span className="text-4xl font-bold text-slate-800">{stats.totalTx}</span><div className="mt-4 text-xs font-bold text-slate-500 flex items-center gap-1 bg-slate-100 w-fit px-2 py-1 rounded-lg">Transazioni totali</div></div></div><div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex-1 min-h-[300px] flex flex-col"><h3 className="font-bold text-lg text-slate-700 mb-6 flex items-center gap-2"><Icon name="TrendingUp"/> Andamento Settimanale</h3><div className="flex-1 w-full h-full">{renderCharts()}</div></div><div className="grid grid-cols-2 md:grid-cols-4 gap-4">{['Analisi Prodotti', 'Registro IVA', 'Vendite Orarie', 'Export Excel'].map((report, i) => (<button key={i} className="p-4 bg-white border border-slate-200 rounded-xl hover:border-blue-500 hover:shadow-md transition-all text-left group"><div className="bg-slate-100 w-10 h-10 rounded-lg flex items-center justify-center mb-3 group-hover:bg-blue-100 text-slate-500 group-hover:text-blue-600 transition-colors"><Icon name="Box" size={20}/></div><div className="font-bold text-slate-700 text-sm">{report}</div><div className="text-[10px] text-slate-400 mt-1">Clicca per generare</div></button>))}</div></div>);
+        };
+
+        // --- APP MAIN WRAPPER ---
         const App = () => {
             const [view, setView] = useState('pos');
             const [products, setProducts] = useState([]);
@@ -917,7 +806,7 @@
                         <div className="flex-1 overflow-hidden flex flex-col relative">
                             <div className="bg-white h-16 border-b border-slate-200 flex items-center justify-between px-6 shadow-sm z-10"><h1 className="font-bold text-xl text-slate-800">{view === 'pos' ? 'Nuova Vendita' : view === 'inventory' ? 'Gestione Magazzino' : 'Pannello Controllo'}</h1><div className="flex items-center gap-2 text-xs font-medium"><div className={`w-2 h-2 rounded-full ${serverStatus === 'online' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`}></div><button onClick={fetchData} className="text-slate-400 hover:text-blue-500 underline decoration-dotted">{serverStatus === 'online' ? 'ONLINE' : 'OFFLINE (Riprova)'}</button></div></div>
                             {loading ? <div className="flex-1 flex items-center justify-center text-slate-400">Caricamento...</div> : 
-                            <div className="flex-1 overflow-hidden p-6">{view === 'pos' && <POSView products={products} cart={cart} setCart={setCart} onAddToCart={addToCart} onCheckout={checkout} />}{view === 'inventory' && <InventoryView products={products} onUpdate={updateProduct} onCreate={createProduct} onDelete={deleteProduct} refresh={fetchData} categories={categories} addCat={addCategory} delCat={deleteCategory} />}{view === 'settings' && <SettingsView config={config} setConfig={setConfig} serverStatus={serverStatus} categories={categories} addCat={addCategory} delCat={deleteCategory} onMigrate={handleMigration} />}{view === 'dashboard' && <DashboardView config={config} refreshTrigger={refreshDashboard} />}</div>}
+                            <div className="flex-1 overflow-hidden p-6">{view === 'pos' && <POSView products={products} cart={cart} setCart={setCart} onAddToCart={addToCart} onCheckout={checkout} config={config} />}{view === 'inventory' && <InventoryView products={products} onUpdate={updateProduct} onCreate={createProduct} onDelete={deleteProduct} refresh={fetchData} categories={categories} addCat={addCategory} delCat={deleteCategory} />}{view === 'settings' && <SettingsView config={config} setConfig={setConfig} serverStatus={serverStatus} categories={categories} addCat={addCategory} delCat={deleteCategory} onMigrate={handleMigration} />}{view === 'dashboard' && <DashboardView config={config} refreshTrigger={refreshDashboard} />}</div>}
                         </div>
                         {showLogin && <LoginModal password={config.adminPass} onSuccess={() => { setShowLogin(false); setView('settings'); }} onClose={() => setShowLogin(false)} />}
                     </div>

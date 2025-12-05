@@ -33,7 +33,7 @@ then
     echo "ERRORE: Python 3 non è installato. Installalo prima di continuare."
     exit 1
 fi
-pip3 install flask flask-cors pywebview requests
+pip3 install flask flask-cors pywebview requests pyserial
 
 # 4. Crea Collegamento Desktop
 echo "[4/4] Creazione collegamento..."

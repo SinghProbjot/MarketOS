@@ -14,6 +14,6 @@ if %errorlevel% NEQ 0 (
 )
 
 :: 2. Installa le librerie necessarie
-pip install flask flask-cors pywebview requests >NUL 2>&1
+pip install flask flask-cors pywebview requests pyserial >NUL 2>&1
 
 exit

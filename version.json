@@ -1,12 +1,17 @@
 {
-  "latest_version": "7.7",
-  "release_date": "2025-12-04",
+  "latest_version": "8.0",
+  "release_date": "2025-12-05",
   "download_url": "", 
   "history": [
     {
+      "version": "8.0",
+      "date": "2025-12-05",
+      "changelog": "- Scale integration with serial port (RS232/USB)\n- COM port configuration added in the Admin panel\n- Real Time weight reading\n- Hardware connectivity stability"
+    },
+    {
       "version": "7.7",
       "date": "2025-12-04",
-      "changelog": "Cross-Platform Core: Added native path detection for Windows, macOS, and Linux\n-"
+      "changelog": "Cross-Platform Core: Added native path detection for Windows, macOS, and Linux"
     },
     {
       "version": "7.6",
