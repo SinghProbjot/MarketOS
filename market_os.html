@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MarketOS Pro v4 (Lotti)</title>
+    <title>MarketOS Pro v9.2 (Smart AI)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- React Core -->
@@ -15,6 +15,8 @@
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
     <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
     <script src="https://unpkg.com/recharts@2.12.3/umd/Recharts.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
 
     <!-- FIREBASE BRIDGE -->
     <script type="module">
@@ -57,6 +59,14 @@
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .toast-enter { transform: translateX(100%); opacity: 0; }
         .toast-enter-active { transform: translateX(0); opacity: 1; transition: all 300ms; }
+        
+        /* Chat Animations */
+        .chat-overlay-enter { opacity: 0; transform: scale(0.95); }
+        .chat-overlay-active { opacity: 1; transform: scale(1); transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+        
+        .chat-bubble { animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        @keyframes popIn { from { opacity: 0; transform: scale(0.9) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+
         @media print { 
             body * { visibility: hidden; } 
             #printable-area, #printable-area * { visibility: visible; } 
@@ -74,8 +84,118 @@
     <div id="root"></div>
     <div id="printable-area" class="hidden"></div>
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
-        const CONFIG_VERSION = 6;
+        const { useState, useEffect, useRef, useMemo } = React;
+        const CONFIG_VERSION = 9;
+
+        // --- MARKET BRAIN (AI ENGINE LOCALE) ---
+        class MarketBrain {
+            constructor(products, logs) {
+                this.products = products;
+                this.logs = logs;
+            }
+
+            parseQuery(query) {
+                const q = query.toLowerCase();
+                const result = { type: 'unknown', data: null, message: "Non ho capito, prova con 'vendite oggi', 'andamento vendite' o 'stock mele'." };
+                const today = new Date().toISOString().split('T')[0];
+
+                // 1. Riconoscimento Entità (Prodotti)
+                const targetProduct = this.products.find(p => q.includes(p.name.toLowerCase()));
+                
+                // 2. Riconoscimento Tempo
+                let timeFilter = 'all';
+                if (q.includes('oggi')) timeFilter = 'today';
+                if (q.includes('settimana')) timeFilter = 'week';
+                if (q.includes('mese')) timeFilter = 'month';
+
+                // 3. Intento: STOCK / GIACENZA
+                if (q.includes('stock') || q.includes('giacenza') || q.includes('quante') || q.includes('quanti')) {
+                    if (targetProduct) {
+                        result.type = 'text';
+                        result.message = `Attualmente hai ${targetProduct.stock} unità di ${targetProduct.name} in magazzino.`;
+                        // Se c'è scadenza vicina, aggiungilo
+                        const exp = this.getNearestExpiry(targetProduct);
+                        if (exp) result.message += ` (Prox scadenza: ${exp})`;
+                    } else {
+                        // Stock generale o lista low stock
+                        const lowStock = this.products.filter(p => p.stock < 5);
+                        result.type = 'list';
+                        result.message = `Hai ${lowStock.length} prodotti sotto scorta minima.`;
+                        result.data = lowStock.map(p => ({ label: p.name, value: p.stock + ' pz' }));
+                    }
+                    return result;
+                }
+
+                // 4. Intento: VENDITE / ANDAMENTO
+                if (q.includes('vendut') || q.includes('vendite') || q.includes('incasso')) {
+                    let filteredLogs = this.logs;
+                    
+                    if (timeFilter === 'today') filteredLogs = filteredLogs.filter(l => l.date.startsWith(today));
+                    
+                    if (targetProduct) {
+                        // Vendite specifico prodotto
+                        let count = 0;
+                        let revenue = 0;
+                        filteredLogs.forEach(l => {
+                            l.items.forEach(i => {
+                                if (i.code === targetProduct.code) {
+                                    count += i.qty;
+                                    revenue += (i.price * i.qty);
+                                }
+                            });
+                        });
+                        result.type = 'chart';
+                        result.message = `${timeFilter === 'today' ? 'Oggi' : 'In questo periodo'} hai venduto ${count} ${targetProduct.name} per un totale di €${revenue.toFixed(2)}.`;
+                        // Dati per grafico (es. ultimi 5 log di questo prodotto)
+                        result.data = filteredLogs.filter(l => l.items.some(i => i.code === targetProduct.code)).slice(0, 7).map(l => ({ name: l.date.split('T')[1].slice(0,5), value: l.total })); 
+                    } else {
+                        // Vendite totali
+                        const total = filteredLogs.reduce((acc, l) => acc + l.total, 0);
+                        
+                        // FIX: Se l'utente chiede "andamento", "grafico" o "trend", restituisci un grafico
+                        if (q.includes('andamento') || q.includes('grafico') || q.includes('trend')) {
+                            result.type = 'chart';
+                            result.message = "Ecco l'andamento delle vendite negli ultimi 7 giorni.";
+                            
+                            // Genera dati ultimi 7 giorni
+                            const last7Days = [...Array(7)].map((_, i) => { 
+                                const d = new Date(); 
+                                d.setDate(d.getDate() - i); 
+                                return d.toISOString().split('T')[0]; 
+                            }).reverse();
+                            
+                            result.data = last7Days.map(date => {
+                                const dayLogs = this.logs.filter(l => l.date.startsWith(date));
+                                const dayTotal = dayLogs.reduce((acc, l) => acc + l.total, 0);
+                                return { name: date.slice(5), value: dayTotal };
+                            });
+                        } else {
+                            // Altrimenti solo testo
+                            result.type = 'text';
+                            result.message = `Il totale vendite ${timeFilter === 'today' ? 'di oggi' : ''} è €${total.toFixed(2)}.`;
+                        }
+                    }
+                    return result;
+                }
+
+                // 5. Intento: SCADENZE
+                if (q.includes('scadenz') || q.includes('scadut')) {
+                   const expiring = this.products.filter(p => p.expiryDate).sort((a,b) => new Date(a.expiryDate) - new Date(b.expiryDate)).slice(0, 5);
+                   result.type = 'list';
+                   result.message = "Ecco i prodotti con scadenza più vicina:";
+                   result.data = expiring.map(p => ({ label: p.name, value: p.expiryDate, alert: true }));
+                   return result;
+                }
+
+                return result;
+            }
+
+            getNearestExpiry(product) {
+                 if(!product.batches || product.batches.length === 0) return product.expiryDate;
+                 const active = product.batches.filter(b => b.stock > 0 && b.expiryDate).sort((a,b) => a.expiryDate.localeCompare(b.expiryDate));
+                 return active.length > 0 ? active[0].expiryDate : null;
+            }
+        }
 
         // --- COMPONENTS UI BASE ---
         const ToastContainer = ({ toasts }) => (
@@ -113,7 +233,10 @@
                 Calendar: <><rect x="3" y="4" width="18" height="18" rx="2" ry="2" stroke="currentColor" strokeWidth="2"/><line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" strokeWidth="2"/><line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" strokeWidth="2"/><line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" strokeWidth="2"/></>,
                 List: <><line x1="8" y1="6" x2="21" y2="6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><line x1="8" y1="12" x2="21" y2="12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><line x1="8" y1="18" x2="21" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><line x1="3" y1="6" x2="3.01" y2="6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><line x1="3" y1="12" x2="3.01" y2="12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><line x1="3" y1="18" x2="3.01" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></>,
                 Alert: <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><line x1="12" y1="9" x2="12" y2="13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><line x1="12" y1="17" x2="12.01" y2="17" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></>,
-                Clock: <><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/><polyline points="12 6 12 12 16 14" stroke="currentColor" strokeWidth="2"/></>
+                Clock: <><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/><polyline points="12 6 12 12 16 14" stroke="currentColor" strokeWidth="2"/></>,
+                Bot: <><rect x="3" y="11" width="18" height="10" rx="2" stroke="currentColor" strokeWidth="2" fill="none" /><circle cx="12" cy="5" r="2" stroke="currentColor" strokeWidth="2" fill="none" /><path d="M12 7v4" stroke="currentColor" strokeWidth="2" fill="none" /><line x1="8" y1="16" x2="8" y2="16" stroke="currentColor" strokeWidth="2" /><line x1="16" y1="16" x2="16" y2="16" stroke="currentColor" strokeWidth="2" /></>,
+                Send: <><line x1="22" y1="2" x2="11" y2="13" stroke="currentColor" strokeWidth="2" /><polygon points="22 2 15 22 11 13 2 9 22 2" stroke="currentColor" strokeWidth="2" /></>,
+                MessageSquare: <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" strokeWidth="2" /></>
             };
             return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={`${className} shrink-0`}>{icons[name]}</svg>;
         };
@@ -876,12 +999,97 @@
         };
 
         const DashboardView = ({ config, refreshTrigger, products }) => {
-            const [stats, setStats] = useState({ dailyTotal: 0, dailyProfit: 0, totalTx: 0, weeklyData: [] }); const [loading, setLoading] = useState(true);
-            const [expiryModal, setExpiryModal] = useState(false);
-            const [expiryFilter, setExpiryFilter] = useState('all'); // all, expired, thisMonth, next3Months
-
-            useEffect(() => { const loadStats = async () => { setLoading(true); try { const logs = await DataAdapter.getLogs(config); const today = new Date().toISOString().split('T')[0]; const todayLogs = logs.filter(l => l.date.startsWith(today)); const dailyTotal = todayLogs.reduce((acc, l) => acc + l.total, 0); const totalTx = todayLogs.length; let dailyProfit = 0; todayLogs.forEach(log => { log.items.forEach(item => { const cost = item.cost || 0; dailyProfit += (item.price - cost) * item.qty; }); }); const last7Days = [...Array(7)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return d.toISOString().split('T')[0]; }).reverse(); const weeklyData = last7Days.map(date => { const dayLogs = logs.filter(l => l.date.startsWith(date)); const dayTotal = dayLogs.reduce((acc, l) => acc + l.total, 0); let dayProfit = 0; dayLogs.forEach(log => { log.items.forEach(item => { dayProfit += ((item.price || 0) - (item.cost || 0)) * item.qty; }); }); return { name: date.slice(5), vendite: dayTotal, profitto: dayProfit }; }); setStats({ dailyTotal, dailyProfit, totalTx, weeklyData }); } catch (e) { console.error(e); } setLoading(false); }; loadStats(); }, [refreshTrigger, config]);
+            const [stats, setStats] = useState({ dailyTotal: 0, dailyProfit: 0, totalTx: 0, weeklyData: [] }); 
+            const [loading, setLoading] = useState(true);
+            const [logs, setLogs] = useState([]);
             
+            // MISSING STATE VARIABLES FOR EXPIRY MODAL (FIXED)
+            const [expiryModal, setExpiryModal] = useState(false);
+            const [expiryFilter, setExpiryFilter] = useState('all');
+
+            // AI Chat State
+            const [chatOpen, setChatOpen] = useState(false);
+            const [chatInput, setChatInput] = useState("");
+            const [chatMessages, setChatMessages] = useState([
+                { id: 1, from: 'ai', type: 'text', content: "Ciao! Sono il tuo assistente. Chiedimi 'quante mele ho venduto oggi', 'andamento vendite' o 'stock coca cola'." }
+            ]);
+
+            useEffect(() => { 
+                const loadStats = async () => { 
+                    setLoading(true); 
+                    try { 
+                        const fetchedLogs = await DataAdapter.getLogs(config);
+                        setLogs(fetchedLogs); // Save logs for AI
+                        const today = new Date().toISOString().split('T')[0]; 
+                        const todayLogs = fetchedLogs.filter(l => l.date.startsWith(today)); 
+                        const dailyTotal = todayLogs.reduce((acc, l) => acc + l.total, 0); 
+                        const totalTx = todayLogs.length; 
+                        let dailyProfit = 0; 
+                        todayLogs.forEach(log => { 
+                            log.items.forEach(item => { 
+                                const cost = item.cost || 0; 
+                                dailyProfit += (item.price - cost) * item.qty; 
+                            }); 
+                        }); 
+                        const last7Days = [...Array(7)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return d.toISOString().split('T')[0]; }).reverse(); 
+                        const weeklyData = last7Days.map(date => { 
+                            const dayLogs = fetchedLogs.filter(l => l.date.startsWith(date)); 
+                            const dayTotal = dayLogs.reduce((acc, l) => acc + l.total, 0); 
+                            let dayProfit = 0; 
+                            dayLogs.forEach(log => { log.items.forEach(item => { dayProfit += ((item.price || 0) - (item.cost || 0)) * item.qty; }); }); 
+                            return { name: date.slice(5), vendite: dayTotal, profitto: dayProfit }; 
+                        }); 
+                        setStats({ dailyTotal, dailyProfit, totalTx, weeklyData }); 
+                    } catch (e) { console.error(e); } 
+                    setLoading(false); 
+                }; 
+                loadStats(); 
+            }, [refreshTrigger, config]);
+
+            const handleSendMessage = (e) => {
+                e.preventDefault();
+                if(!chatInput.trim()) return;
+                
+                // Add User Message
+                const userMsg = { id: Date.now(), from: 'user', type: 'text', content: chatInput };
+                setChatMessages(prev => [...prev, userMsg]);
+                
+                // Process AI Response
+                const brain = new MarketBrain(products, logs);
+                const response = brain.parseQuery(chatInput);
+                
+                setTimeout(() => {
+                    const aiMsg = { 
+                        id: Date.now() + 1, 
+                        from: 'ai', 
+                        type: response.type, 
+                        content: response.message, 
+                        data: response.data 
+                    };
+                    setChatMessages(prev => [...prev, aiMsg]);
+                }, 500);
+
+                setChatInput("");
+            };
+            
+            const renderCharts = () => { if (!window.Recharts) return <div className="flex items-center justify-center h-full text-slate-400">Caricamento Grafici...</div>; const { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = window.Recharts; return (<ResponsiveContainer width="100%" height="100%"><AreaChart data={stats.weeklyData}><defs><linearGradient id="colorVendite" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient><linearGradient id="colorProfitto" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient></defs><XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} /><YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `€${val}`}/><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'}} /><Area type="monotone" dataKey="vendite" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorVendite)" name="Incasso" /><Area type="monotone" dataKey="profitto" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorProfitto)" name="Utile" /></AreaChart></ResponsiveContainer>); };
+            
+            // Mini chart renderer for Chat
+            const renderMiniChart = (data) => {
+                 const { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer } = window.Recharts;
+                 return (
+                     <div className="h-64 w-full mt-4 bg-white rounded-xl p-4 shadow-sm border border-slate-100">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={data}>
+                                <XAxis dataKey="name" />
+                                <Tooltip cursor={{fill: 'transparent'}} />
+                                <Bar dataKey="value" fill="#3b82f6" radius={[4,4,0,0]} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                     </div>
+                 );
+            };
+
             // Logica "Espansa" per la dashboard: guarda dentro i lotti
             const getExpiringBatches = () => {
                 const today = new Date();
@@ -918,21 +1126,95 @@
                 }).sort((a,b) => new Date(a.expiryDate) - new Date(b.expiryDate));
             };
 
-            const renderCharts = () => { if (!window.Recharts) return <div className="flex items-center justify-center h-full text-slate-400">Caricamento Grafici...</div>; const { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = window.Recharts; return (<ResponsiveContainer width="100%" height="100%"><AreaChart data={stats.weeklyData}><defs><linearGradient id="colorVendite" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient><linearGradient id="colorProfitto" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient></defs><XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} /><YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `€${val}`}/><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'}} /><Area type="monotone" dataKey="vendite" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorVendite)" name="Incasso" /><Area type="monotone" dataKey="profitto" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorProfitto)" name="Utile" /></AreaChart></ResponsiveContainer>); };
-            
             return (
-                <div className="h-full flex flex-col p-8 gap-8 overflow-y-auto">
-                    <div className="flex justify-between items-center"><h2 className="text-3xl font-bold text-slate-800">Dashboard Finanziaria</h2><div className="text-sm text-slate-500 font-mono">{new Date().toLocaleDateString()}</div></div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6"><div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col relative overflow-hidden"><div className="absolute top-0 right-0 p-4 opacity-10"><Icon name="DollarSign" size={60} className="text-green-500"/></div><span className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-1">Incasso Oggi</span><span className="text-4xl font-bold text-slate-800">€{stats.dailyTotal.toFixed(2)}</span><div className="mt-4 text-xs font-bold text-green-600 flex items-center gap-1 bg-green-50 w-fit px-2 py-1 rounded-lg"><Icon name="TrendingUp" size={14}/> Aggiornato Live</div></div><div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-6 rounded-3xl shadow-lg shadow-blue-900/20 flex flex-col text-white relative overflow-hidden"><div className="absolute top-0 right-0 p-4 opacity-20"><Icon name="PieChart" size={60} className="text-white"/></div><span className="text-sm font-bold text-blue-100 uppercase tracking-wider mb-1">Utile Netto Oggi</span><span className="text-4xl font-bold">€{stats.dailyProfit.toFixed(2)}</span><div className="mt-4 text-xs font-bold text-blue-200 flex items-center gap-1 bg-white/10 w-fit px-2 py-1 rounded-lg">Margine: {stats.dailyTotal > 0 ? ((stats.dailyProfit/stats.dailyTotal)*100).toFixed(1) : 0}%</div></div><div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col relative overflow-hidden"><div className="absolute top-0 right-0 p-4 opacity-10"><Icon name="ShoppingCart" size={60} className="text-orange-500"/></div><span className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-1">Scontrini</span><span className="text-4xl font-bold text-slate-800">{stats.totalTx}</span><div className="mt-4 text-xs font-bold text-slate-500 flex items-center gap-1 bg-slate-100 w-fit px-2 py-1 rounded-lg">Transazioni totali</div></div></div>
-                    <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex-1 min-h-[300px] flex flex-col"><h3 className="font-bold text-lg text-slate-700 mb-6 flex items-center gap-2"><Icon name="TrendingUp"/> Andamento Settimanale</h3><div className="flex-1 w-full h-full">{renderCharts()}</div></div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <button onClick={() => setExpiryModal(true)} className="p-4 bg-orange-50 border border-orange-200 rounded-xl hover:border-orange-500 hover:shadow-md transition-all text-left group">
-                            <div className="bg-white w-10 h-10 rounded-lg flex items-center justify-center mb-3 group-hover:bg-orange-100 text-orange-500 transition-colors"><Icon name="Clock" size={20}/></div>
-                            <div className="font-bold text-orange-800 text-sm">Analisi Scadenze (Lotti)</div>
-                            <div className="text-[10px] text-orange-600/60 mt-1">Clicca per report</div>
-                        </button>
-                        {['Registro IVA', 'Vendite Orarie', 'Export Excel'].map((report, i) => (<button key={i} className="p-4 bg-white border border-slate-200 rounded-xl hover:border-blue-500 hover:shadow-md transition-all text-left group"><div className="bg-slate-100 w-10 h-10 rounded-lg flex items-center justify-center mb-3 group-hover:bg-blue-100 text-slate-500 group-hover:text-blue-600 transition-colors"><Icon name="List" size={20}/></div><div className="font-bold text-slate-700 text-sm">{report}</div><div className="text-[10px] text-slate-400 mt-1">Clicca per generare</div></button>))}
+                <div className="h-full relative overflow-hidden">
+                    
+                    {/* Main Dashboard Area */}
+                    <div className="h-full flex flex-col gap-6 p-8 overflow-y-auto">
+                        <div className="flex justify-between items-center"><h2 className="text-3xl font-bold text-slate-800">Dashboard Finanziaria</h2><div className="text-sm text-slate-500 font-mono">{new Date().toLocaleDateString()}</div></div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6"><div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col relative overflow-hidden"><div className="absolute top-0 right-0 p-4 opacity-10"><Icon name="DollarSign" size={60} className="text-green-500"/></div><span className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-1">Incasso Oggi</span><span className="text-4xl font-bold text-slate-800">€{stats.dailyTotal.toFixed(2)}</span><div className="mt-4 text-xs font-bold text-green-600 flex items-center gap-1 bg-green-50 w-fit px-2 py-1 rounded-lg"><Icon name="TrendingUp" size={14}/> Aggiornato Live</div></div><div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-6 rounded-3xl shadow-lg shadow-blue-900/20 flex flex-col text-white relative overflow-hidden"><div className="absolute top-0 right-0 p-4 opacity-20"><Icon name="PieChart" size={60} className="text-white"/></div><span className="text-sm font-bold text-blue-100 uppercase tracking-wider mb-1">Utile Netto Oggi</span><span className="text-4xl font-bold">€{stats.dailyProfit.toFixed(2)}</span><div className="mt-4 text-xs font-bold text-blue-200 flex items-center gap-1 bg-white/10 w-fit px-2 py-1 rounded-lg">Margine: {stats.dailyTotal > 0 ? ((stats.dailyProfit/stats.dailyTotal)*100).toFixed(1) : 0}%</div></div><div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col relative overflow-hidden"><div className="absolute top-0 right-0 p-4 opacity-10"><Icon name="ShoppingCart" size={60} className="text-orange-500"/></div><span className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-1">Scontrini</span><span className="text-4xl font-bold text-slate-800">{stats.totalTx}</span><div className="mt-4 text-xs font-bold text-slate-500 flex items-center gap-1 bg-slate-100 w-fit px-2 py-1 rounded-lg">Transazioni totali</div></div></div>
+                        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex-1 min-h-[300px] flex flex-col"><h3 className="font-bold text-lg text-slate-700 mb-6 flex items-center gap-2"><Icon name="TrendingUp"/> Andamento Settimanale</h3><div className="flex-1 w-full h-full">{renderCharts()}</div></div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <button onClick={() => setExpiryModal(true)} className="p-4 bg-orange-50 border border-orange-200 rounded-xl hover:border-orange-500 hover:shadow-md transition-all text-left group">
+                                <div className="bg-white w-10 h-10 rounded-lg flex items-center justify-center mb-3 group-hover:bg-orange-100 text-orange-500 transition-colors"><Icon name="Clock" size={20}/></div>
+                                <div className="font-bold text-orange-800 text-sm">Analisi Scadenze (Lotti)</div>
+                                <div className="text-[10px] text-orange-600/60 mt-1">Clicca per report</div>
+                            </button>
+                            {['Registro IVA', 'Vendite Orarie', 'Export Excel'].map((report, i) => (<button key={i} className="p-4 bg-white border border-slate-200 rounded-xl hover:border-blue-500 hover:shadow-md transition-all text-left group"><div className="bg-slate-100 w-10 h-10 rounded-lg flex items-center justify-center mb-3 group-hover:bg-blue-100 text-slate-500 group-hover:text-blue-600 transition-colors"><Icon name="List" size={20}/></div><div className="font-bold text-slate-700 text-sm">{report}</div><div className="text-[10px] text-slate-400 mt-1">Clicca per generare</div></button>))}
+                        </div>
                     </div>
+
+                    {/* Floating AI Trigger Button */}
+                    {!chatOpen && (
+                        <button 
+                            onClick={() => setChatOpen(true)}
+                            className="absolute bottom-8 right-8 bg-blue-600 text-white w-16 h-16 rounded-full shadow-2xl shadow-blue-500/50 hover:bg-blue-700 transition-all hover:scale-110 z-50 flex items-center justify-center group animate-in zoom-in"
+                        >
+                            <Icon name="Bot" size={32} />
+                        </button>
+                    )}
+
+                    {/* Full Screen Chat Overlay */}
+                    {chatOpen && (
+                        <div className="absolute inset-0 z-40 bg-slate-50/95 backdrop-blur-md flex flex-col animate-in slide-in-from-bottom-10 duration-300">
+                            {/* Chat Header */}
+                            <div className="p-6 border-b border-slate-200 flex justify-between items-center bg-white/50 sticky top-0">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
+                                        <Icon name="Bot" size={28}/>
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-xl text-slate-800">Market Intelligence AI</h3>
+                                        <p className="text-sm text-slate-500">Analisi dati in tempo reale</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setChatOpen(false)} className="p-3 hover:bg-slate-200 rounded-full text-slate-500 transition-colors">
+                                    <Icon name="X" size={24}/>
+                                </button>
+                            </div>
+                            
+                            {/* Chat Body */}
+                            <div className="flex-1 overflow-y-auto p-8 space-y-6 max-w-4xl mx-auto w-full">
+                                {chatMessages.map(msg => (
+                                    <div key={msg.id} className={`flex ${msg.from === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                        <div className={`max-w-[80%] chat-bubble ${msg.from === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-white border border-slate-200 text-slate-700 rounded-bl-none'} p-6 rounded-3xl shadow-md text-base`}>
+                                            <p className="leading-relaxed">{msg.content}</p>
+                                            
+                                            {/* Dynamic Content Rendering */}
+                                            {msg.type === 'chart' && msg.data && renderMiniChart(msg.data)}
+                                            {msg.type === 'list' && msg.data && (
+                                                <ul className="mt-4 space-y-2">
+                                                    {msg.data.map((item, idx) => (
+                                                        <li key={idx} className="flex justify-between items-center text-sm bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                                            <span className="font-medium">{item.label}</span>
+                                                            <span className={`font-mono font-bold ${item.alert ? 'text-red-500' : 'text-slate-600'}`}>{item.value}</span>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                                <div id="chat-anchor"></div>
+                            </div>
+
+                            {/* Chat Input Area */}
+                            <div className="p-6 bg-white border-t border-slate-200">
+                                <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto flex gap-4 relative">
+                                    <input 
+                                        value={chatInput} 
+                                        onChange={e => setChatInput(e.target.value)} 
+                                        className="flex-1 bg-slate-100 border-none rounded-2xl px-6 py-4 text-lg outline-none focus:ring-2 focus:ring-blue-500/50 shadow-inner" 
+                                        placeholder="Chiedi 'vendite oggi' o 'stock mele'..."
+                                        autoFocus
+                                    />
+                                    <button className="p-4 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 transition-colors shadow-lg hover:shadow-blue-500/30">
+                                        <Icon name="Send" size={24} />
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
 
                     {expiryModal && (
                         <Modal title="Report Scadenze" onClose={() => setExpiryModal(false)}>
@@ -1122,60 +1404,9 @@
 
             const checkout = async () => { 
                 if(cart.length === 0) return; 
-                
-                // --- LOGICA VENDITA FIFO/FEFO PER LOTTI ---
-                const newProds = products.map(p => { 
-                    const cartItem = cart.find(x => x.code === p.code); 
-                    if (!cartItem) return p; 
-                    
-                    let qtyToDeduct = cartItem.qty;
-                    let updatedBatches = [...(p.batches || [])];
-                    
-                    // Se non ci sono lotti, crea un lotto fittizio
-                    if(updatedBatches.length === 0) {
-                         updatedBatches.push({id: 'legacy', stock: p.stock, expiryDate: p.expiryDate});
-                    }
-
-                    // Ordina per scadenza (First Expired First Out)
-                    updatedBatches.sort((a,b) => {
-                         if(!a.expiryDate) return 1;
-                         if(!b.expiryDate) return -1;
-                         return a.expiryDate.localeCompare(b.expiryDate);
-                    });
-
-                    // Deduci quantità dai lotti
-                    updatedBatches = updatedBatches.map(b => {
-                        if(qtyToDeduct <= 0) return b;
-                        if(b.stock >= qtyToDeduct) {
-                            b.stock -= qtyToDeduct;
-                            qtyToDeduct = 0;
-                            return b;
-                        } else {
-                            qtyToDeduct -= b.stock;
-                            b.stock = 0;
-                            return b;
-                        }
-                    }).filter(b => b.stock > 0); // Rimuovi lotti esauriti? O tienili a 0? Meglio filtrare se vuoi pulizia, o tenere a 0 per storico. Qui filtro per pulizia.
-                    
-                    // Se qtyToDeduct > 0 significa che siamo andati sotto stock (vendita in negativo)
-                    const totalNewStock = updatedBatches.reduce((a,b)=>a+b.stock, 0) - qtyToDeduct;
-
-                    // Ricalcola scadenza visibile
-                    const activeBatches = updatedBatches.filter(b => b.expiryDate);
-                    activeBatches.sort((a,b) => a.expiryDate.localeCompare(b.expiryDate));
-                    const newExpiry = activeBatches.length > 0 ? activeBatches[0].expiryDate : "";
-
-                    return { 
-                        ...p, 
-                        stock: totalNewStock,
-                        batches: updatedBatches,
-                        expiryDate: newExpiry 
-                    }; 
-                }); 
-
+                const newProds = products.map(p => { const c = cart.find(x => x.code === p.code); return c ? { ...p, stock: p.stock - c.qty } : p; }); 
                 const total = cart.reduce((s, i) => s + (i.price * i.qty), 0); 
                 const log = { id: Date.now(), date: new Date().toISOString(), total, items: cart, type: 'sale' }; 
-                
                 try {
                     setProducts(newProds); 
                     setLogs([log, ...logs]); 

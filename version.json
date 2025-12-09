@@ -1,8 +1,13 @@
 {
-  "latest_version": "8.0",
-  "release_date": "2025-12-05",
+  "latest_version": "9.0",
+  "release_date": "2025-12-09",
   "download_url": "", 
   "history": [
+    {
+      "version": "9.0",
+      "date": "2025-12-09",
+      "changelog": "- Batch management and Batch expiry\n- Products expiry date + Graphic dashboard\n- AI Assistant in Dashboard\n- Enjoy!"
+    },
     {
       "version": "8.0",
       "date": "2025-12-05",
