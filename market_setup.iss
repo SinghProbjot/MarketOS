@@ -1,8 +1,8 @@
 ; Script Inno Setup per MarketOS Pro v8.x
 
 #define MyAppName "MarketOS Pro"
-#define MyAppVersion "8.0"
-#define MyAppPublisher "Tuo Nome"
+#define MyAppVersion "14.0"
+#define MyAppPublisher "Singh Probjot"
 #define MyAppExeName "AVVIA_MARKET.bat"
 
 [Setup]
