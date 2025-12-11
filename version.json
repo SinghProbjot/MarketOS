@@ -1,8 +1,13 @@
 {
-  "latest_version": "9.0",
-  "release_date": "2025-12-09",
-  "download_url": "", 
+  "latest_version": "14.0",
+  "release_date": "2025-12-11",
+  "download_url": "https://github.com/SinghProbjot/MarketOS/releases/tag/v14.0", 
   "history": [
+    {
+      "version": "14.0",
+      "date": "2025-12-11",
+      "changelog": "- Warehouse management system\n- company details in Admin panel\n- transactions history Panel\n-receipt printing \n Enjoy!"
+    },
     {
       "version": "9.0",
       "date": "2025-12-09",
