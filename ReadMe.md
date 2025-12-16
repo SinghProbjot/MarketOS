@@ -135,3 +135,4 @@ git clone https://github.com/SinghProbjot/MarketOS.git
 cd MarketOS
 
 pip install -r requirements.txt
+# Make sure: flask, flask-cors, pywebview, requests are included
