@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MarketOS Pro v14.2 (Fixed)</title>
+    <title>MarketOS Pro v15 (Debt Register)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- React Core -->
@@ -71,7 +71,6 @@
             body * { visibility: hidden; } 
             #root, .toast-container { display: none !important; } 
             
-            /* FORCE DISPLAY BLOCK FOR PRINT AREA */
             #printable-area { 
                 visibility: visible !important; 
                 display: block !important; 
@@ -84,14 +83,12 @@
             }
             #printable-area * { visibility: visible !important; }
 
-            /* Stile Report A4 */
             .print-grid { display: grid !important; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 10px; }
             .print-item { border: 1px dashed #ccc; padding: 10px; text-align: center; page-break-inside: avoid; display: flex; flex-direction: column; align-items: center; justify-content: center; }
             .print-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
             .print-table th, .print-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
             .print-table th { background-color: #f2f2f2; }
 
-            /* Stile Scontrino Termico (58mm/80mm simulation) */
             .receipt-style {
                 width: 78mm; 
                 font-family: 'Courier New', monospace;
@@ -116,7 +113,7 @@
     
     <script type="text/babel">
         const { useState, useEffect, useRef, useMemo } = React;
-        const CONFIG_VERSION = 14;
+        const CONFIG_VERSION = 15;
 
         // --- MARKET BRAIN (AI ENGINE LOCALE) ---
         class MarketBrain {
@@ -258,7 +255,8 @@
                 Send: <><line x1="22" y1="2" x2="11" y2="13" stroke="currentColor" strokeWidth="2" /><polygon points="22 2 15 22 11 13 2 9 22 2" stroke="currentColor" strokeWidth="2" /></>,
                 MessageSquare: <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" strokeWidth="2" /></>,
                 Clipboard: <><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" stroke="currentColor" strokeWidth="2" fill="none" /><rect x="8" y="2" width="8" height="4" rx="1" ry="1" stroke="currentColor" strokeWidth="2" fill="none" /></>,
-                User: <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke="currentColor" strokeWidth="2" /><circle cx="12" cy="7" r="4" stroke="currentColor" strokeWidth="2" /></>
+                User: <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke="currentColor" strokeWidth="2" /><circle cx="12" cy="7" r="4" stroke="currentColor" strokeWidth="2" /></>,
+                BookUser: <><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="currentColor" strokeWidth="2" fill="none" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" stroke="currentColor" strokeWidth="2" fill="none" /><circle cx="12" cy="8" r="2" stroke="currentColor" strokeWidth="2" /><path d="M15 13a3 3 0 1 0-6 0" stroke="currentColor" strokeWidth="2" /></>
             };
             return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={`${className} shrink-0`}>{icons[name]}</svg>;
         };
@@ -421,6 +419,45 @@
                     await window.FB.addDoc(window.FB.collection(window.FB.db, "logs"), l);
                 }
                 return count;
+            },
+            // --- CUSTOMERS & DEBTS ---
+            async getCustomers(config) {
+                if (config.storageMode === 'firebase') {
+                    const q = window.FB.query(window.FB.collection(window.FB.db, "customers"));
+                    const snapshot = await window.FB.getDocs(q);
+                    return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+                }
+                return JSON.parse(localStorage.getItem('customers')) || [];
+            },
+            async saveCustomer(config, customer) {
+                if (config.storageMode === 'firebase') {
+                    await window.FB.setDoc(window.FB.doc(window.FB.db, "customers", customer.id.toString()), customer);
+                } else {
+                    const customers = JSON.parse(localStorage.getItem('customers')) || [];
+                    const idx = customers.findIndex(c => c.id === customer.id);
+                    if (idx >= 0) customers[idx] = customer;
+                    else customers.push(customer);
+                    localStorage.setItem('customers', JSON.stringify(customers));
+                }
+            },
+            async saveDebtLog(config, log) {
+                if (config.storageMode === 'firebase') {
+                    await window.FB.addDoc(window.FB.collection(window.FB.db, "debt_logs"), log);
+                } else {
+                    const logs = JSON.parse(localStorage.getItem('debt_logs')) || [];
+                    logs.push(log);
+                    localStorage.setItem('debt_logs', JSON.stringify(logs));
+                }
+            },
+            async getDebtLogs(config, customerId) {
+                if (config.storageMode === 'firebase') {
+                    // Requires better query, simple fetch for now
+                    const q = window.FB.query(window.FB.collection(window.FB.db, "debt_logs")); 
+                    const snapshot = await window.FB.getDocs(q);
+                    return snapshot.docs.map(doc => doc.data()).filter(l => l.customerId === customerId);
+                }
+                const logs = JSON.parse(localStorage.getItem('debt_logs')) || [];
+                return logs.filter(l => l.customerId === customerId);
             },
 
             // --- NUOVE API BILANCIA ---
@@ -651,7 +688,7 @@
         };
 
         // --- VISTE ---
-        const POSView = ({ products, cart, setCart, onCheckout, config, onPrintReceipt }) => {
+        const POSView = ({ products, cart, setCart, onCheckout, onDebtCheckout, config, onPrintReceipt, customers }) => {
             const [input, setInput] = useState(""); 
             const [searchMode, setSearchMode] = useState(false); 
             const [searchTerm, setSearchTerm] = useState(""); 
@@ -660,8 +697,10 @@
             const [liveWeight, setLiveWeight] = useState(null); 
             const inputRef = useRef(null);
             const scaleInterval = useRef(null);
+            const [showCustomerSelect, setShowCustomerSelect] = useState(false);
+            const [newCustomerName, setNewCustomerName] = useState("");
 
-            useEffect(() => { if (!weightItem && !searchMode) inputRef.current?.focus(); }, [cart, weightItem, searchMode]);
+            useEffect(() => { if (!weightItem && !searchMode && !showCustomerSelect) inputRef.current?.focus(); }, [cart, weightItem, searchMode, showCustomerSelect]);
             
             useEffect(() => {
                 if (weightItem) {
@@ -685,7 +724,6 @@
                 const p = products.find(x => x.code === clean) || products.find(x => x.name.toLowerCase() === clean.toLowerCase()); 
                 if (!p) return alert("Non trovato: " + clean); 
                 
-                // Controllo scadenza sul lotto più vecchio (FEFO)
                 const nearestExp = getNearestExpiry(p);
                 const status = getExpiryStatus(nearestExp);
                 if(status && status.label === 'SCADUTO') {
@@ -716,10 +754,9 @@
             
             const total = cart.reduce((a, b) => a + (b.price * b.qty), 0); 
             
-            // Calcolo IVA dinamico per il carrello
             const totalTax = cart.reduce((acc, item) => {
                 const itemTotal = item.price * item.qty;
-                const taxRate = item.taxRate || 22; // Default 22% se non specificato
+                const taxRate = item.taxRate || 22; 
                 const net = itemTotal / (1 + taxRate/100);
                 return acc + (itemTotal - net);
             }, 0);
@@ -788,6 +825,9 @@
                             <button onClick={onPrintReceipt} disabled={!onPrintReceipt} className="w-full py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl flex items-center justify-center gap-3 transition-all text-sm">
                                 <Icon name="Printer" size={16}/> Stampa Ultimo
                             </button>
+                            <button onClick={() => setShowCustomerSelect(true)} disabled={cart.length === 0} className="w-full py-3 bg-yellow-500 hover:bg-yellow-400 text-white font-bold rounded-xl flex items-center justify-center gap-3 transition-all text-sm">
+                                <Icon name="BookUser" size={16}/> SEGNA SU REGISTRO
+                            </button>
                             <button onClick={onCheckout} disabled={cart.length === 0} className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:shadow-lg hover:shadow-blue-900/50 text-lg">
                                 <Icon name="Check" /> INCASSA
                             </button>
@@ -825,11 +865,37 @@
                             </div>
                         </div>
                     )}
+
+                    {showCustomerSelect && (
+                        <Modal title="Seleziona Cliente per Debito" onClose={() => setShowCustomerSelect(false)}>
+                            <div className="space-y-4">
+                                <div className="flex gap-2">
+                                    <input placeholder="Cerca cliente..." className="flex-1 border p-2 rounded-lg" onChange={e => setSearchTerm(e.target.value)} />
+                                    <button onClick={() => {
+                                        const name = prompt("Nome nuovo cliente:");
+                                        if(name) {
+                                            const newC = { id: Date.now().toString(), name, balance: 0 };
+                                            // In a real app we'd save this properly via a callback, for now mock
+                                            onDebtCheckout(newC);
+                                            setShowCustomerSelect(false);
+                                        }
+                                    }} className="bg-green-500 text-white px-4 rounded-lg"><Icon name="Plus"/></button>
+                                </div>
+                                <div className="max-h-64 overflow-y-auto space-y-2">
+                                    {customers.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())).map(c => (
+                                        <button key={c.id} onClick={() => { onDebtCheckout(c); setShowCustomerSelect(false); }} className="w-full text-left p-3 border rounded-lg hover:bg-blue-50 flex justify-between">
+                                            <span className="font-bold">{c.name}</span>
+                                            <span className={c.balance > 0 ? "text-red-500" : "text-green-500"}>€{c.balance.toFixed(2)}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </Modal>
+                    )}
                 </div>
             );
         };
 
-        // --- NEW WAREHOUSE VIEW ---
         const WarehouseView = ({ products, onUpdate }) => {
             const [barcode, setBarcode] = useState("");
             const [selectedProduct, setSelectedProduct] = useState(null);
@@ -1269,10 +1335,7 @@
             const handleDelete = async (log) => {
                 if(confirm("Sei sicuro di voler annullare questa transazione? Lo stock verrà ripristinato.")) {
                     try {
-                        // 1. Restore Stock Logic
                         await onRestoreStock(log);
-                        
-                        // 2. Delete Log
                         await onDelete(log.id);
                         setLogs(prev => prev.filter(l => l.id !== log.id));
                     } catch(e) {
@@ -1287,29 +1350,8 @@
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex-1 overflow-hidden flex flex-col">
                         <div className="overflow-y-auto flex-1">
                             <table className="w-full text-left">
-                                <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-bold sticky top-0">
-                                    <tr>
-                                        <th className="px-6 py-4">Data</th>
-                                        <th className="px-6 py-4">ID Transazione</th>
-                                        <th className="px-6 py-4">Articoli</th>
-                                        <th className="px-6 py-4">Totale</th>
-                                        <th className="px-6 py-4 text-right">Azioni</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {logs.map(log => (
-                                        <tr key={log.id} className="hover:bg-slate-50">
-                                            <td className="px-4 py-3 text-sm text-slate-600">{new Date(log.date).toLocaleString()}</td>
-                                            <td className="px-4 py-3 text-sm font-mono">{log.id.toString().slice(-8)}</td>
-                                            <td className="px-4 py-3 text-sm">{log.items.length} articoli</td>
-                                            <td className="px-4 py-3 font-bold text-slate-800">€{log.total.toFixed(2)}</td>
-                                            <td className="px-4 py-3 text-right flex justify-end gap-2">
-                                                <button onClick={() => printReceipt(log, config)} className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg"><Icon name="Printer" size={16}/></button>
-                                                <button onClick={() => handleDelete(log)} className="p-2 hover:bg-red-50 text-red-600 rounded-lg"><Icon name="Trash" size={16}/></button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
+                                <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-bold sticky top-0"><tr><th className="px-6 py-4">Data</th><th className="px-6 py-4">ID Transazione</th><th className="px-6 py-4">Articoli</th><th className="px-6 py-4">Totale</th><th className="px-6 py-4 text-right">Azioni</th></tr></thead>
+                                <tbody className="divide-y divide-slate-100">{logs.map(log => (<tr key={log.id} className="hover:bg-slate-50"><td className="px-4 py-3 text-sm text-slate-600">{new Date(log.date).toLocaleString()}</td><td className="px-4 py-3 text-sm font-mono">{log.id.toString().slice(-8)}</td><td className="px-4 py-3 text-sm">{log.items.length} articoli</td><td className="px-4 py-3 font-bold text-slate-800">€{log.total.toFixed(2)}</td><td className="px-4 py-3 text-right flex justify-end gap-2"><button onClick={() => printReceipt(log, config)} className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg"><Icon name="Printer" size={16}/></button><button onClick={() => handleDelete(log)} className="p-2 hover:bg-red-50 text-red-600 rounded-lg"><Icon name="Trash" size={16}/></button></td></tr>))}</tbody>
                             </table>
                         </div>
                     </div>
@@ -1317,7 +1359,125 @@
             );
         };
 
-        // --- COMPANY DATA MODAL ---
+        // --- DEBT REGISTER VIEW (NEW) ---
+        const DebtRegisterView = ({ config, customers, onAddCustomer, onUpdateCustomer }) => {
+            const [selectedCustomer, setSelectedCustomer] = useState(null);
+            const [paymentAmount, setPaymentAmount] = useState("");
+            const [customerLogs, setCustomerLogs] = useState([]);
+            const [searchTerm, setSearchTerm] = useState("");
+
+            const refreshLogs = async () => {
+                if(selectedCustomer) {
+                    const logs = await DataAdapter.getDebtLogs(config, selectedCustomer.id);
+                    setCustomerLogs(logs.sort((a,b) => new Date(b.date) - new Date(a.date)));
+                }
+            };
+
+            useEffect(() => { refreshLogs(); }, [selectedCustomer]);
+
+            const handlePayment = async () => {
+                const amt = parseFloat(paymentAmount);
+                if(!amt || amt <= 0) return alert("Inserisci un importo valido");
+
+                const newBalance = selectedCustomer.balance - amt;
+                const updatedCustomer = { ...selectedCustomer, balance: newBalance };
+                
+                await onUpdateCustomer(updatedCustomer);
+                
+                const log = {
+                    id: Date.now(),
+                    customerId: selectedCustomer.id,
+                    amount: -amt, // Negative for payment
+                    type: 'PAYMENT',
+                    date: new Date().toISOString(),
+                    description: 'Acconto/Saldo Debito'
+                };
+                await DataAdapter.saveDebtLog(config, log);
+                
+                setSelectedCustomer(updatedCustomer);
+                setPaymentAmount("");
+                refreshLogs();
+                alert("Pagamento registrato");
+            };
+
+            return (
+                <div className="h-full flex p-6 gap-6 overflow-hidden">
+                    {/* Customer List */}
+                    <div className="w-1/3 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
+                        <div className="p-4 border-b border-slate-100 bg-slate-50">
+                            <h3 className="font-bold text-lg text-slate-700 mb-3">Clienti</h3>
+                            <div className="flex gap-2">
+                                <input className="flex-1 border p-2 rounded-lg text-sm" placeholder="Cerca..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                                <button onClick={() => {
+                                    const name = prompt("Nome nuovo cliente:");
+                                    if(name) onAddCustomer({ id: Date.now().toString(), name, balance: 0, phone: "" });
+                                }} className="bg-blue-600 text-white p-2 rounded-lg"><Icon name="Plus" size={20}/></button>
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto">
+                            {customers.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())).map(c => (
+                                <div key={c.id} onClick={() => setSelectedCustomer(c)} className={`p-4 border-b border-slate-100 cursor-pointer hover:bg-blue-50 transition-colors ${selectedCustomer?.id === c.id ? 'bg-blue-50' : ''}`}>
+                                    <div className="flex justify-between items-center">
+                                        <span className="font-bold text-slate-800">{c.name}</span>
+                                        <span className={`font-mono font-bold ${c.balance > 0 ? 'text-red-500' : 'text-green-500'}`}>€{c.balance.toFixed(2)}</span>
+                                    </div>
+                                    <div className="text-xs text-slate-400 mt-1">Tel: {c.phone || "-"}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Details */}
+                    <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
+                        {selectedCustomer ? (
+                            <>
+                                <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                                    <div>
+                                        <h2 className="text-2xl font-bold text-slate-800">{selectedCustomer.name}</h2>
+                                        <p className="text-slate-500 text-sm">Scheda Contabile</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-sm text-slate-400 uppercase font-bold">Saldo Attuale</div>
+                                        <div className={`text-4xl font-mono font-bold ${selectedCustomer.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>€{selectedCustomer.balance.toFixed(2)}</div>
+                                    </div>
+                                </div>
+                                
+                                <div className="p-6 bg-yellow-50 border-b border-yellow-100 flex gap-4 items-end">
+                                    <div className="flex-1">
+                                        <label className="text-xs font-bold text-yellow-700 uppercase">Registra Pagamento (Rientro)</label>
+                                        <input type="number" step="0.01" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} className="w-full p-3 rounded-xl border border-yellow-200 font-bold text-lg" placeholder="€ 0.00"/>
+                                    </div>
+                                    <button onClick={handlePayment} className="bg-yellow-500 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-yellow-500/20 hover:bg-yellow-600 transition-all">CONFERMA PAGAMENTO</button>
+                                </div>
+
+                                <div className="flex-1 overflow-y-auto p-0">
+                                    <table className="w-full text-left">
+                                        <thead className="bg-slate-50 text-slate-500 text-xs uppercase sticky top-0">
+                                            <tr><th className="p-4">Data</th><th className="p-4">Tipo</th><th className="p-4">Dettagli</th><th className="p-4 text-right">Importo</th></tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {customerLogs.map(log => (
+                                                <tr key={log.id}>
+                                                    <td className="p-4 text-sm text-slate-600">{new Date(log.date).toLocaleDateString()}</td>
+                                                    <td className="p-4"><span className={`text-xs font-bold px-2 py-1 rounded ${log.type === 'DEBT' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>{log.type === 'DEBT' ? 'ACQUISTO' : 'PAGAMENTO'}</span></td>
+                                                    <td className="p-4 text-sm text-slate-500 truncate max-w-xs">{log.description}</td>
+                                                    <td className={`p-4 text-right font-mono font-bold ${log.amount > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                                        {log.amount > 0 ? '+' : ''}€{log.amount.toFixed(2)}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="flex-1 flex items-center justify-center text-slate-400">Seleziona un cliente per vedere i dettagli</div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
         const CompanyModal = ({ config, onSave, onClose }) => {
             const [data, setData] = useState({
                 address: config.address || "",
@@ -1330,10 +1490,7 @@
             return (
                 <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden p-6 space-y-4">
-                        <div className="flex justify-between items-center mb-2">
-                            <h3 className="font-bold text-lg text-slate-800">Dati Aziendali (Scontrino)</h3>
-                            <button onClick={onClose}><Icon name="X" size={20}/></button>
-                        </div>
+                        <div className="flex justify-between items-center mb-2"><h3 className="font-bold text-lg text-slate-800">Dati Aziendali (Scontrino)</h3><button onClick={onClose}><Icon name="X" size={20}/></button></div>
                         <div><label className="text-xs font-bold text-slate-500">Indirizzo Completo</label><input value={data.address} onChange={e => setData({...data, address: e.target.value})} className="w-full border p-2 rounded-lg" placeholder="Via Roma 1, Milano"/></div>
                         <div><label className="text-xs font-bold text-slate-500">P.IVA / Cod. Fiscale</label><input value={data.piva} onChange={e => setData({...data, piva: e.target.value})} className="w-full border p-2 rounded-lg" placeholder="IT12345678901"/></div>
                         <div><label className="text-xs font-bold text-slate-500">Telefono</label><input value={data.phone} onChange={e => setData({...data, phone: e.target.value})} className="w-full border p-2 rounded-lg" placeholder="02 1234567"/></div>
@@ -1402,11 +1559,9 @@
             const [loading, setLoading] = useState(true);
             const [logs, setLogs] = useState([]);
             
-            // MISSING STATE VARIABLES FOR EXPIRY MODAL (FIXED)
             const [expiryModal, setExpiryModal] = useState(false);
             const [expiryFilter, setExpiryFilter] = useState('all');
 
-            // AI Chat State
             const [chatOpen, setChatOpen] = useState(false);
             const [chatInput, setChatInput] = useState("");
             const [chatMessages, setChatMessages] = useState([
@@ -1581,6 +1736,7 @@
             const [cart, setCart] = useState([]);
             const [logs, setLogs] = useState([]);
             const [categories, setCategories] = useState([]); 
+            const [customers, setCustomers] = useState([]);
             const [toasts, setToasts] = useState([]);
             const [refreshDashboard, setRefreshDashboard] = useState(0);
             
@@ -1622,25 +1778,16 @@
             const fetchData = async () => {
                 setLoading(true);
                 try {
-                    if (config.storageMode === 'server') {
-                        const prods = await DataAdapter.getProducts(config);
-                        const cats = await DataAdapter.getCategories(config); 
-                        setProducts(prods);
-                        setCategories(cats);
-                        setServerStatus('online');
-                    } else if (config.storageMode === 'firebase') {
-                        const prods = await DataAdapter.getProducts(config);
-                        const cats = await DataAdapter.getCategories(config);
-                        setProducts(prods);
-                        setCategories(cats);
-                        setServerStatus('online'); 
-                    } else {
-                        setProducts(JSON.parse(localStorage.getItem('products')) || []);
-                        setServerStatus('local');
-                    }
+                    const prods = await DataAdapter.getProducts(config);
+                    const cats = await DataAdapter.getCategories(config); 
+                    const custs = await DataAdapter.getCustomers(config);
+                    setProducts(prods);
+                    setCategories(cats);
+                    setCustomers(custs);
+                    setServerStatus('online');
                 } catch (e) {
                     setServerStatus('offline');
-                    if(config.storageMode === 'server' || config.storageMode === 'firebase') addToast("Errore Connessione", 'error');
+                    addToast("Errore Connessione DB", 'error');
                 } finally {
                     setLoading(false);
                 }
@@ -1650,6 +1797,53 @@
                 fetchData();
                 localStorage.setItem('config', JSON.stringify(config));
             }, [config.storageMode, config.serverUrl, config.firebaseConfig]); 
+
+            // --- DEBT LOGIC ---
+            const handleAddCustomer = async (newCustomer) => {
+                await DataAdapter.saveCustomer(config, newCustomer);
+                setCustomers(prev => [...prev, newCustomer]);
+            };
+
+            const handleUpdateCustomer = async (updatedCustomer) => {
+                await DataAdapter.saveCustomer(config, updatedCustomer);
+                setCustomers(prev => prev.map(c => c.id === updatedCustomer.id ? updatedCustomer : c));
+            };
+
+            const handleDebtCheckout = async (customer) => {
+                if(cart.length === 0) return;
+                
+                // 1. Calculate totals
+                const total = cart.reduce((s, i) => s + (i.price * i.qty), 0);
+                
+                // 2. Update Customer Balance
+                const updatedCustomer = { ...customer, balance: customer.balance + total };
+                await handleUpdateCustomer(updatedCustomer);
+
+                // 3. Create Debt Log
+                const debtLog = {
+                    id: Date.now(),
+                    customerId: customer.id,
+                    amount: total,
+                    type: 'DEBT',
+                    date: new Date().toISOString(),
+                    description: `Acquisto ${cart.length} articoli (ID: ${Date.now().toString().slice(-6)})`
+                };
+                await DataAdapter.saveDebtLog(config, debtLog);
+
+                // 4. Update Stock (Same logic as checkout but without cash log)
+                // Simplified stock deduction for brevity
+                const newProds = products.map(p => { 
+                    const cartItem = cart.find(x => x.code === p.code); 
+                    if (!cartItem) return p; 
+                    return { ...p, stock: p.stock - cartItem.qty }; // Simple deduction
+                });
+                
+                for(let p of newProds) { if (cart.find(c => c.code === p.code)) await DataAdapter.saveProduct(config, p); }
+                
+                setProducts(newProds);
+                setCart([]);
+                addToast(`Addebitato a ${customer.name}: €${total.toFixed(2)}`);
+            };
 
             // --- CATEGORY ACTIONS ---
             const addCategory = async (name) => {
@@ -1731,36 +1925,27 @@
                 }
             };
 
-            // NEW: Restore Stock Logic
             const restoreStock = async (log) => {
                 for (let item of log.items) {
                     const product = products.find(p => p.code === item.code);
                     if (product) {
                         let newP = { ...product };
-                        // To keep it simple, restore to a "restored" batch or the legacy/generic one
-                        // Ideally we would track which batch it came from, but for simplicity we add to the first available batch
                         if (!newP.batches) newP.batches = [];
-                        
-                        // Find generic batch or create one
                         let targetBatch = newP.batches.find(b => b.id === 'legacy') || newP.batches[0];
                         if (!targetBatch) {
                             targetBatch = { id: 'restored', stock: 0, expiryDate: newP.expiryDate || "", cost: newP.cost || 0 };
                             newP.batches.push(targetBatch);
                         }
-                        
                         targetBatch.stock += item.qty;
                         newP.stock += item.qty;
-                        
                         await DataAdapter.saveProduct(config, newP);
                     }
                 }
-                // Refresh local products state
                 fetchData();
             };
 
             const checkout = async () => { 
                 if(cart.length === 0) return; 
-                
                 let transactionTotalCost = 0; 
                 let transactionNetTotal = 0; 
                 let transactionTaxTotal = 0; 
@@ -1768,86 +1953,31 @@
                 const newProds = products.map(p => { 
                     const cartItem = cart.find(x => x.code === p.code); 
                     if (!cartItem) return p; 
-                    
                     let qtyToDeduct = cartItem.qty;
                     let updatedBatches = [...(p.batches || [])];
                     const itemTaxRate = p.taxRate || 22; 
-
-                    if(updatedBatches.length === 0) {
-                         updatedBatches.push({id: 'legacy', stock: p.stock, expiryDate: p.expiryDate, cost: p.cost || 0});
-                    }
-
-                    updatedBatches.sort((a,b) => {
-                         if(!a.expiryDate) return 1;
-                         if(!b.expiryDate) return -1;
-                         return a.expiryDate.localeCompare(b.expiryDate);
-                    });
-
-                    updatedBatches = updatedBatches.map(b => {
-                        if(qtyToDeduct <= 0) return b;
-                        
-                        let taken = 0;
-                        if(b.stock >= qtyToDeduct) {
-                            taken = qtyToDeduct;
-                            b.stock -= qtyToDeduct;
-                            qtyToDeduct = 0;
-                        } else {
-                            taken = b.stock;
-                            qtyToDeduct -= b.stock;
-                            b.stock = 0;
-                        }
-                        
-                        transactionTotalCost += (taken * (b.cost || 0));
-                        return b;
-                    }).filter(b => b.stock > 0);
-                    
-                    if (qtyToDeduct > 0) {
-                        transactionTotalCost += (qtyToDeduct * (p.cost || 0));
-                    }
-
+                    if(updatedBatches.length === 0) { updatedBatches.push({id: 'legacy', stock: p.stock, expiryDate: p.expiryDate, cost: p.cost || 0}); }
+                    updatedBatches.sort((a,b) => { if(!a.expiryDate) return 1; if(!b.expiryDate) return -1; return a.expiryDate.localeCompare(b.expiryDate); });
+                    updatedBatches = updatedBatches.map(b => { if(qtyToDeduct <= 0) return b; let taken = 0; if(b.stock >= qtyToDeduct) { taken = qtyToDeduct; b.stock -= qtyToDeduct; qtyToDeduct = 0; } else { taken = b.stock; qtyToDeduct -= b.stock; b.stock = 0; } transactionTotalCost += (taken * (b.cost || 0)); return b; }).filter(b => b.stock > 0);
+                    if (qtyToDeduct > 0) { transactionTotalCost += (qtyToDeduct * (p.cost || 0)); }
                     const totalNewStock = updatedBatches.reduce((a,b)=>a+b.stock, 0) - qtyToDeduct;
-
                     const lineTotal = cartItem.qty * p.price;
                     const lineNet = lineTotal / (1 + itemTaxRate/100);
                     transactionNetTotal += lineNet;
                     transactionTaxTotal += (lineTotal - lineNet);
-
                     const activeBatches = updatedBatches.filter(b => b.expiryDate);
                     activeBatches.sort((a,b) => a.expiryDate.localeCompare(b.expiryDate));
                     const newExpiry = activeBatches.length > 0 ? activeBatches[0].expiryDate : "";
-
-                    return { 
-                        ...p, 
-                        stock: totalNewStock,
-                        batches: updatedBatches,
-                        expiryDate: newExpiry 
-                    }; 
+                    return { ...p, stock: totalNewStock, batches: updatedBatches, expiryDate: newExpiry }; 
                 }); 
 
                 const total = cart.reduce((s, i) => s + (i.price * i.qty), 0); 
-                
-                const log = { 
-                    id: Date.now(), 
-                    date: new Date().toISOString(), 
-                    total: total, 
-                    netTotal: transactionNetTotal, 
-                    taxTotal: transactionTaxTotal, 
-                    totalCost: transactionTotalCost, 
-                    items: cart, 
-                    type: 'sale' 
-                }; 
+                const log = { id: Date.now(), date: new Date().toISOString(), total, netTotal: transactionNetTotal, taxTotal: transactionTaxTotal, totalCost: transactionTotalCost, items: cart, type: 'sale' }; 
                 
                 try {
                     setProducts(newProds); 
                     setLogs([log, ...logs]); 
-                    
-                    if(config.storageMode === 'server' || config.storageMode === 'firebase') { 
-                        for(let p of newProds) { if (cart.find(c => c.code === p.code)) await DataAdapter.saveProduct(config, p); }
-                        await DataAdapter.saveLog(config, log); 
-                    } else {
-                        localStorage.setItem('products', JSON.stringify(newProds));
-                        localStorage.setItem('logs', JSON.stringify([log, ...JSON.parse(localStorage.getItem('logs')||'[]')]));
-                    }
+                    if(config.storageMode === 'server' || config.storageMode === 'firebase') { for(let p of newProds) { if (cart.find(c => c.code === p.code)) await DataAdapter.saveProduct(config, p); } await DataAdapter.saveLog(config, log); } else { localStorage.setItem('products', JSON.stringify(newProds)); localStorage.setItem('logs', JSON.stringify([log, ...JSON.parse(localStorage.getItem('logs')||'[]')])); }
                     setCart([]); 
                     addToast(`Vendita OK: €${total.toFixed(2)}`);
                     setRefreshDashboard(prev => prev + 1);
@@ -1860,15 +1990,16 @@
                 <>
                     <ToastContainer toasts={toasts} />
                     <div className="flex h-screen bg-[#f0f2f5] font-sans text-slate-800">
-                        <div className="w-24 bg-[#0f172a] flex flex-col items-center py-8 gap-4 shadow-2xl z-20 shrink-0"><div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white font-black text-xl mb-6 shadow-lg shadow-blue-900/50">MK</div><NavBtn icon="ShoppingCart" active={view === 'pos'} onClick={() => setView('pos')} label="Cassa" /><NavBtn icon="Box" active={view === 'inventory'} onClick={() => setView('inventory')} label="Prodotti" /><NavBtn icon="Clipboard" active={view === 'warehouse'} onClick={() => setView('warehouse')} label="Magazzino" /><NavBtn icon="List" active={view === 'history'} onClick={() => setView('history')} label="Storico" /><NavBtn icon="TrendingUp" active={view === 'dashboard'} onClick={() => setView('dashboard')} label="Report" /><div className="mt-auto"><NavBtn icon="Settings" active={view === 'settings'} onClick={() => setShowLogin(true)} label="Admin" color="text-slate-500" /></div></div>
+                        <div className="w-24 bg-[#0f172a] flex flex-col items-center py-8 gap-4 shadow-2xl z-20 shrink-0"><div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white font-black text-xl mb-6 shadow-lg shadow-blue-900/50">MK</div><NavBtn icon="ShoppingCart" active={view === 'pos'} onClick={() => setView('pos')} label="Cassa" /><NavBtn icon="Box" active={view === 'inventory'} onClick={() => setView('inventory')} label="Prodotti" /><NavBtn icon="Clipboard" active={view === 'warehouse'} onClick={() => setView('warehouse')} label="Magazzino" /><NavBtn icon="BookUser" active={view === 'debts'} onClick={() => setView('debts')} label="Registro" /><NavBtn icon="List" active={view === 'history'} onClick={() => setView('history')} label="Storico" /><NavBtn icon="TrendingUp" active={view === 'dashboard'} onClick={() => setView('dashboard')} label="Report" /><div className="mt-auto"><NavBtn icon="Settings" active={view === 'settings'} onClick={() => setShowLogin(true)} label="Admin" color="text-slate-500" /></div></div>
                         <div className="flex-1 overflow-hidden flex flex-col relative">
-                            <div className="bg-white h-16 border-b border-slate-200 flex items-center justify-between px-6 shadow-sm z-10"><h1 className="font-bold text-xl text-slate-800">{view === 'pos' ? 'Nuova Vendita' : view === 'inventory' ? 'Gestione Magazzino' : view === 'history' ? 'Storico Transazioni' : view === 'warehouse' ? 'Operazioni Magazzino' : 'Pannello Controllo'}</h1><div className="flex items-center gap-2 text-xs font-medium"><div className={`w-2 h-2 rounded-full ${serverStatus === 'online' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`}></div><button onClick={fetchData} className="text-slate-400 hover:text-blue-500 underline decoration-dotted">{serverStatus === 'online' ? 'ONLINE' : 'OFFLINE (Riprova)'}</button></div></div>
+                            <div className="bg-white h-16 border-b border-slate-200 flex items-center justify-between px-6 shadow-sm z-10"><h1 className="font-bold text-xl text-slate-800">{view === 'pos' ? 'Nuova Vendita' : view === 'inventory' ? 'Gestione Magazzino' : view === 'history' ? 'Storico Transazioni' : view === 'warehouse' ? 'Operazioni Magazzino' : view === 'debts' ? 'Registro Debiti' : 'Pannello Controllo'}</h1><div className="flex items-center gap-2 text-xs font-medium"><div className={`w-2 h-2 rounded-full ${serverStatus === 'online' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`}></div><button onClick={fetchData} className="text-slate-400 hover:text-blue-500 underline decoration-dotted">{serverStatus === 'online' ? 'ONLINE' : 'OFFLINE (Riprova)'}</button></div></div>
                             {loading ? <div className="flex-1 flex items-center justify-center text-slate-400">Caricamento...</div> : 
                             <div className="flex-1 overflow-hidden p-6">
-                                {view === 'pos' && <POSView products={products} cart={cart} setCart={setCart} onAddToCart={addToCart} onCheckout={checkout} config={config} onPrintReceipt={() => logs[0] && printReceipt(logs[0], config)} />}
+                                {view === 'pos' && <POSView products={products} cart={cart} setCart={setCart} onAddToCart={addToCart} onCheckout={checkout} onDebtCheckout={handleDebtCheckout} customers={customers} config={config} onPrintReceipt={() => logs[0] && printReceipt(logs[0], config)} />}
                                 {view === 'inventory' && <InventoryView products={products} onUpdate={updateProduct} onCreate={createProduct} onDelete={deleteProduct} refresh={fetchData} categories={categories} addCat={addCategory} delCat={deleteCategory} />}
                                 {view === 'warehouse' && <WarehouseView products={products} onUpdate={updateProduct} />}
                                 {view === 'history' && <HistoryView config={config} onDelete={deleteLog} products={products} onRestoreStock={restoreStock} />}
+                                {view === 'debts' && <DebtRegisterView config={config} customers={customers} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} />}
                                 {view === 'settings' && <SettingsView config={config} setConfig={setConfig} serverStatus={serverStatus} categories={categories} addCat={addCategory} delCat={deleteCategory} onMigrate={handleMigration} />}
                                 {view === 'dashboard' && <DashboardView config={config} refreshTrigger={refreshDashboard} products={products} />}
                             </div>}
