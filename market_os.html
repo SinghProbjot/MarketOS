@@ -128,42 +128,85 @@
             }
 
             parseQuery(query) {
-                const q = query.toLowerCase();
-                const result = { type: 'unknown', data: null, message: "Non ho capito, prova con 'vendite oggi', 'andamento vendite' o 'stock mele'." };
-                const today = new Date().toISOString().split('T')[0];
-
-                const targetProduct = this.products.find(p => q.includes(p.name.toLowerCase()));
+                let q = query.toLowerCase();
+                // Normalizzazione base: rimuove punteggiatura
+                q = q.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+                
+                const result = { type: 'unknown', data: null, message: "Non ho capito. Prova: 'incasso oggi', 'stock mele', 'scadenze'." };
+                
+                // 1. Estrazione Tempo
+                const now = new Date();
+                const todayStr = now.toISOString().split('T')[0];
                 let timeFilter = 'all';
-                if (q.includes('oggi')) timeFilter = 'today';
-                if (q.includes('settimana')) timeFilter = 'week';
-                if (q.includes('mese')) timeFilter = 'month';
+                let dateLabel = 'in totale';
 
-                if (q.includes('stock') || q.includes('giacenza') || q.includes('quante') || q.includes('quanti')) {
+                if (q.includes('oggi')) { timeFilter = 'today'; dateLabel = 'oggi'; }
+                else if (q.includes('ieri')) { timeFilter = 'yesterday'; dateLabel = 'ieri'; }
+                else if (q.includes('settimana') || q.includes('7 giorni')) { timeFilter = 'week'; dateLabel = 'questa settimana'; }
+                else if (q.includes('mese') || q.includes('30 giorni')) { timeFilter = 'month'; dateLabel = 'questo mese'; }
+
+                // 2. Estrazione Prodotto (Priorità al nome più lungo per evitare match parziali errati)
+                let targetProduct = null;
+                const sortedProducts = [...this.products].sort((a, b) => b.name.length - a.name.length);
+                for (const p of sortedProducts) {
+                    if (q.includes(p.name.toLowerCase())) { targetProduct = p; break; }
+                }
+                // Fallback codice
+                if (!targetProduct) {
+                    const words = q.split(' ');
+                    for (const w of words) {
+                        const p = this.products.find(x => x.code === w);
+                        if (p) { targetProduct = p; break; }
+                    }
+                }
+
+                // 3. Identificazione Intento
+                // STOCK
+                if (q.includes('stock') || q.includes('giacenza') || q.includes('quant') || q.includes('rimast') || q.includes('c\'è') || q.includes('avete') || q.includes('disponibil')) {
                     if (targetProduct) {
                         const unit = targetProduct.isWeighable ? 'kg' : 'pz';
                         result.type = 'text';
-                        result.message = `Attualmente hai ${targetProduct.stock} ${unit} di ${targetProduct.name} in magazzino.`;
+                        result.message = `Di ${targetProduct.name} ne hai ${targetProduct.stock} ${unit}.`;
                         const exp = this.getNearestExpiry(targetProduct);
-                        if (exp) result.message += ` (Prox scadenza: ${exp})`;
+                        if (exp) result.message += ` (Scade il: ${exp})`;
+                        return result;
                     } else {
                         const lowStock = this.products.filter(p => p.stock < 5);
                         result.type = 'list';
-                        result.message = `Hai ${lowStock.length} prodotti sotto scorta minima.`;
-                        result.data = lowStock.map(p => ({ label: p.name, value: `${p.stock} ${p.isWeighable ? 'kg' : 'pz'}` }));
+                        result.message = `Ecco i prodotti in esaurimento (${lowStock.length}):`;
+                        result.data = lowStock.map(p => ({ label: p.name, value: `${p.stock} ${p.isWeighable ? 'kg' : 'pz'}`, alert: true }));
+                        return result;
                     }
-                    return result;
                 }
 
-                if (q.includes('vendut') || q.includes('vendite') || q.includes('incasso') || q.includes('andamento') || q.includes('grafico')) {
+                // SCADENZE
+                if (q.includes('scadenz') || q.includes('scadut') || q.includes('scadono')) {
+                   const expiring = this.products.filter(p => p.expiryDate).sort((a,b) => new Date(a.expiryDate) - new Date(b.expiryDate)).slice(0, 5);
+                   result.type = 'list';
+                   result.message = "Ecco i prodotti che scadono prima:";
+                   result.data = expiring.map(p => ({ label: p.name, value: p.expiryDate, alert: true }));
+                   return result;
+                }
+
+                // VENDITE (Default se contiene keywords o se c'è prodotto+tempo)
+                if (q.includes('vendut') || q.includes('vendite') || q.includes('incasso') || q.includes('fatturato') || q.includes('guadagn') || q.includes('andamento') || q.includes('fatto') || (targetProduct && timeFilter !== 'all')) {
                     let filteredLogs = this.logs;
-                    if (timeFilter === 'today') filteredLogs = filteredLogs.filter(l => l.date.startsWith(today));
+                    const oneDay = 24 * 60 * 60 * 1000;
+
+                    if (timeFilter === 'today') filteredLogs = filteredLogs.filter(l => l.date.startsWith(todayStr));
+                    else if (timeFilter === 'yesterday') {
+                        const yesterday = new Date(now.getTime() - oneDay).toISOString().split('T')[0];
+                        filteredLogs = filteredLogs.filter(l => l.date.startsWith(yesterday));
+                    }
+                    else if (timeFilter === 'week') filteredLogs = filteredLogs.filter(l => new Date(l.date) >= new Date(now.getTime() - (7 * oneDay)));
+                    else if (timeFilter === 'month') filteredLogs = filteredLogs.filter(l => new Date(l.date) >= new Date(now.getTime() - (30 * oneDay)));
                     
                     if (targetProduct) {
                         let count = 0;
                         let revenue = 0;
                         const unit = targetProduct.isWeighable ? 'kg' : 'pz';
                         filteredLogs.forEach(l => {
-                            l.items.forEach(i => {
+                            if(l.items) l.items.forEach(i => {
                                 if (i.code === targetProduct.code) {
                                     count += i.qty;
                                     revenue += (i.price * i.qty);
@@ -171,34 +214,23 @@
                             });
                         });
                         result.type = 'chart';
-                        result.message = `${timeFilter === 'today' ? 'Oggi' : 'In questo periodo'} hai venduto ${count.toFixed(2)} ${unit} di ${targetProduct.name} per un totale di €${revenue.toFixed(2)}.`;
-                        const productLogs = filteredLogs.filter(l => l.items.some(i => i.code === targetProduct.code));
+                        result.message = `${dateLabel.charAt(0).toUpperCase() + dateLabel.slice(1)} hai venduto ${count.toFixed(2)} ${unit} di ${targetProduct.name} (€${revenue.toFixed(2)}).`;
+                        const productLogs = filteredLogs.filter(l => l.items && l.items.some(i => i.code === targetProduct.code));
                         result.data = this.groupLogsByDate(productLogs);
                     } else {
                         const total = filteredLogs.reduce((acc, l) => acc + l.total, 0);
-                        if (q.includes('andamento') || q.includes('grafico') || q.includes('trend')) {
+                        if (q.includes('andamento') || q.includes('grafico') || timeFilter === 'week' || timeFilter === 'month') {
                             result.type = 'chart';
-                            result.message = "Ecco l'andamento delle vendite (Ultimi 7 gg).";
-                            const now = new Date();
-                            const past = new Date();
-                            past.setDate(now.getDate() - 7);
-                            const recentLogs = this.logs.filter(l => new Date(l.date) >= past);
-                            result.data = this.groupLogsByDate(recentLogs);
+                            result.message = `L'incasso ${dateLabel} è stato di €${total.toFixed(2)}. Ecco il grafico:`;
+                            result.data = this.groupLogsByDate(filteredLogs);
                         } else {
                             result.type = 'text';
-                            result.message = `Il totale lordo ${timeFilter === 'today' ? 'di oggi' : ''} è €${total.toFixed(2)}.`;
+                            result.message = `L'incasso totale ${dateLabel} è €${total.toFixed(2)}.`;
                         }
                     }
                     return result;
                 }
 
-                if (q.includes('scadenz') || q.includes('scadut')) {
-                   const expiring = this.products.filter(p => p.expiryDate).sort((a,b) => new Date(a.expiryDate) - new Date(b.expiryDate)).slice(0, 5);
-                   result.type = 'list';
-                   result.message = "Ecco i prodotti con scadenza più vicina:";
-                   result.data = expiring.map(p => ({ label: p.name, value: p.expiryDate, alert: true }));
-                   return result;
-                }
                 return result;
             }
 
