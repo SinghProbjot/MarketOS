@@ -54,7 +54,8 @@ The application relies on a unified **Data Adapter** pattern that abstracts the 
 
 ```mermaid
 graph TD
-    UI[React Frontend] -->|Calls| DA[Data Adapter Layer]
+    UI[React Frontend] -->|Data Ops| DA[Data Adapter Layer]
+    UI -.->|Hardware Ops| API
     
     subgraph "Storage Strategies"
         DA -->|Mode: Local| LS[(Browser LocalStorage)]
@@ -70,6 +71,21 @@ graph TD
 
 ### 2. The "MarketBrain" NLP Engine
 We developed a custom, rule-based NLP engine (`MarketBrain`) running entirely in the browser (Client-Side).
+
+```mermaid
+graph TD
+    Input["User Input (String)"] --> Step1[Normalization]
+    Step1 --> Step2[Entity Extraction]
+    Step2 --> Step3{Intent Classification}
+    
+    Step3 -->|Stock Info| Logic1[Filter Inventory]
+    Step3 -->|Sales Analysis| Logic2[Filter Transaction Logs]
+    Step3 -->|Expiry Reports| Logic3[Check Batch Dates]
+    
+    Logic1 & Logic2 & Logic3 --> Step4[Data Aggregation]
+    Step4 --> Output["Natural Language Response"]
+```
+
 - **Privacy First**: No data is sent to external AI APIs (like OpenAI).
 - **Logic**:
     1.  **Normalization**: Cleans input strings (lowercasing, punctuation removal).
