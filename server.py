@@ -35,6 +35,11 @@ if not os.path.exists(market_data_dir):
     try: os.makedirs(market_data_dir)
     except: market_data_dir = '.'
 
+DOCS_DIR = os.path.join(market_data_dir, 'documents')
+if not os.path.exists(DOCS_DIR):
+    try: os.makedirs(DOCS_DIR)
+    except: pass
+
 DB_FILE = os.path.join(market_data_dir, 'market.db')
 LOG_FILE = os.path.join(market_data_dir, 'server_error.log')
 CONFIG_FILE = os.path.join(market_data_dir, 'scale_config.json') # File config bilancia separato
@@ -114,6 +119,17 @@ def init_db():
         entry_date TEXT,
         FOREIGN KEY(product_code) REFERENCES products(code)
     )''')
+    
+    # Migrazione colonne mancanti per DB esistenti
+    try: c.execute("ALTER TABLE batches ADD COLUMN cost REAL DEFAULT 0")
+    except: pass
+    try: c.execute("ALTER TABLE batches ADD COLUMN supplier TEXT DEFAULT ''")
+    except: pass
+
+    # NUOVE TABELLE: CLIENTI E DEBITI
+    c.execute('''CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, name TEXT, balance REAL, phone TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS debt_logs (id TEXT PRIMARY KEY, customerId TEXT, amount REAL, type TEXT, date TEXT, description TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS customer_docs (id TEXT PRIMARY KEY, customerId TEXT, filename TEXT, date TEXT, mimeType TEXT)''')
 
     # Popola categorie default
     c.execute("SELECT count(*) FROM categories")
@@ -191,6 +207,17 @@ def get_products():
         c.execute("SELECT min(expiry_date) FROM batches WHERE product_code = ? AND quantity > 0 AND expiry_date != ''", (p['code'],))
         next_expiry = c.fetchone()[0]
         p['nextExpiry'] = next_expiry
+        
+        # Recupera i lotti per il prodotto
+        c.execute("SELECT * FROM batches WHERE product_code = ?", (p['code'],))
+        batches = []
+        for b in c.fetchall():
+            batch = dict(b)
+            batch['stock'] = batch['quantity'] # Mapping per frontend
+            batch['expiryDate'] = batch['expiry_date'] # Mapping per frontend
+            batches.append(batch)
+        p['batches'] = batches
+        
         products.append(p)
     conn.close()
     return jsonify(products)
@@ -213,15 +240,25 @@ def upsert_product():
                      originalPrice=excluded.originalPrice, isWeighable=excluded.isWeighable, category=excluded.category''', 
                   (data['code'], data['name'], data['price'], data['cost'], 0, data.get('originalPrice'), is_weighable, category))
         
-        # 2. Gestione Stock: Se è un nuovo carico (addStock > 0), crea un lotto
-        # Se stiamo solo modificando il prezzo, non tocchiamo i lotti
-        added_stock = float(data.get('addedStock', 0)) # Nuova quantità da aggiungere
-        expiry_date = data.get('expiryDate', "")      # Data scadenza di questo carico
+        # 2. Gestione Stock e Lotti
+        # Se il client invia una lista esplicita di 'batches' (es. da InventoryView), usiamo quella (Full Sync)
+        if 'batches' in data and isinstance(data['batches'], list):
+            c.execute("DELETE FROM batches WHERE product_code = ?", (data['code'],))
+            for b in data['batches']:
+                qty = float(b.get('stock', b.get('quantity', 0)))
+                if qty > 0:
+                    entry = b.get('entry_date', datetime.now().strftime("%Y-%m-%d"))
+                    c.execute("INSERT INTO batches (product_code, quantity, expiry_date, entry_date, cost, supplier) VALUES (?, ?, ?, ?, ?, ?)",
+                              (data['code'], qty, b.get('expiryDate', ''), entry, b.get('cost', 0), b.get('supplier', '')))
+        else:
+            # Fallback: Gestione semplificata (es. da POS o import rapido)
+            added_stock = float(data.get('addedStock', 0)) 
+            expiry_date = data.get('expiryDate', "")
 
-        if added_stock > 0:
-            entry_date = datetime.now().strftime("%Y-%m-%d")
-            c.execute("INSERT INTO batches (product_code, quantity, expiry_date, entry_date) VALUES (?, ?, ?, ?)",
-                      (data['code'], added_stock, expiry_date, entry_date))
+            if added_stock > 0:
+                entry_date = datetime.now().strftime("%Y-%m-%d")
+                c.execute("INSERT INTO batches (product_code, quantity, expiry_date, entry_date) VALUES (?, ?, ?, ?)",
+                          (data['code'], added_stock, expiry_date, entry_date))
         
         # 3. Ricalcola stock totale dai lotti per coerenza
         c.execute("SELECT sum(quantity) FROM batches WHERE product_code = ?", (data['code'],))
@@ -314,6 +351,147 @@ def handle_logs():
             return jsonify({"success": True})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
+
+@app.route('/api/logs/<int:log_id>', methods=['DELETE'])
+def delete_log(log_id):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    try:
+        # 1. Recupera dettagli vendita per ripristinare stock
+        c.execute("SELECT items_json FROM logs WHERE id = ?", (log_id,))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+            
+        items = json.loads(row[0])
+        
+        # 2. Ripristina Stock
+        for item in items:
+            code = item['code']
+            qty = item['qty']
+            
+            # Aggiorna Stock Totale
+            c.execute("UPDATE products SET stock = stock + ? WHERE code = ?", (qty, code))
+            
+            # Aggiorna Lotti: Aggiunge al lotto più recente (o ne crea uno di ripristino)
+            c.execute("SELECT id FROM batches WHERE product_code = ? ORDER BY entry_date DESC LIMIT 1", (code,))
+            batch_row = c.fetchone()
+            
+            if batch_row:
+                c.execute("UPDATE batches SET quantity = quantity + ? WHERE id = ?", (qty, batch_row[0]))
+            else:
+                # Crea lotto di ripristino se non ne esistono
+                today = datetime.now().strftime("%Y-%m-%d")
+                c.execute("INSERT INTO batches (product_code, quantity, expiry_date, entry_date) VALUES (?, ?, '', ?)", (code, qty, today))
+
+        # 3. Elimina Log
+        c.execute("DELETE FROM logs WHERE id = ?", (log_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True})
+    except Exception as e:
+        conn.close()
+        return jsonify({"error": str(e)}), 500
+
+# API CLIENTI E DEBITI
+@app.route('/api/customers', methods=['GET', 'POST'])
+def handle_customers():
+    conn = sqlite3.connect(DB_FILE)
+    if request.method == 'GET':
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("SELECT * FROM customers")
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return jsonify(rows)
+    else:
+        data = request.json
+        c = conn.cursor()
+        c.execute("INSERT OR REPLACE INTO customers (id, name, balance, phone) VALUES (?, ?, ?, ?)",
+                  (data['id'], data['name'], data['balance'], data.get('phone', '')))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True})
+
+@app.route('/api/debt_logs', methods=['GET', 'POST'])
+def handle_debt_logs():
+    conn = sqlite3.connect(DB_FILE)
+    if request.method == 'GET':
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        cust_id = request.args.get('customerId')
+        query = "SELECT * FROM debt_logs WHERE customerId = ?" if cust_id else "SELECT * FROM debt_logs"
+        params = (cust_id,) if cust_id else ()
+        c.execute(query, params)
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return jsonify(rows)
+    else:
+        data = request.json
+        c = conn.cursor()
+        c.execute("INSERT INTO debt_logs (id, customerId, amount, type, date, description) VALUES (?, ?, ?, ?, ?, ?)",
+                  (str(data['id']), data['customerId'], data['amount'], data['type'], data['date'], data['description']))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True})
+
+# API DOCUMENTI CLIENTI
+@app.route('/api/documents', methods=['GET'])
+def get_customer_docs():
+    cust_id = request.args.get('customerId')
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM customer_docs WHERE customerId = ? ORDER BY date DESC", (cust_id,))
+    rows = [dict(r) for r in c.fetchall()]
+    conn.close()
+    return jsonify(rows)
+
+@app.route('/api/documents/upload', methods=['POST'])
+def upload_document():
+    if 'file' not in request.files: return jsonify({"error": "No file"}), 400
+    file = request.files['file']
+    customer_id = request.form.get('customerId')
+    
+    if file and customer_id and file.filename:
+        safe_name = "".join([c for c in file.filename if c.isalpha() or c.isdigit() or c in '._-'])
+        filename = f"{int(time.time())}_{safe_name}"
+        file.save(os.path.join(DOCS_DIR, filename))
+        
+        doc_id = str(int(time.time() * 1000))
+        date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("INSERT INTO customer_docs (id, customerId, filename, date, mimeType) VALUES (?, ?, ?, ?, ?)",
+                  (doc_id, customer_id, filename, date_str, file.content_type))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True})
+    return jsonify({"error": "Error"}), 500
+
+@app.route('/api/documents/<doc_id>', methods=['GET', 'DELETE'])
+def handle_document(doc_id):
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM customer_docs WHERE id = ?", (doc_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "Not found"}), 404
+    doc = dict(row)
+    if request.method == 'DELETE':
+        try: os.remove(os.path.join(DOCS_DIR, doc['filename']))
+        except: pass
+        c.execute("DELETE FROM customer_docs WHERE id = ?", (doc_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True})
+    else:
+        conn.close()
+        return send_from_directory(DOCS_DIR, doc['filename'])
 
 # API Categorie (Invariate)
 @app.route('/api/categories', methods=['GET', 'POST'])

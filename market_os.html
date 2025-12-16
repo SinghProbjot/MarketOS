@@ -22,11 +22,13 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js"; 
-        import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc, addDoc, query, orderBy, limit, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc, addDoc, query, orderBy, limit, writeBatch, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 
         window.FB = {
             app: null,
             db: null,
+            storage: null,
             init: async (configJson) => {
                 try {
                     const config = typeof configJson === 'string' ? JSON.parse(configJson) : configJson;
@@ -35,11 +37,13 @@
                     const app = initializeApp(config);
                     const auth = getAuth(app);
                     const db = getFirestore(app);
+                    const storage = getStorage(app);
                     
                     await signInAnonymously(auth);
 
                     window.FB.app = app;
                     window.FB.db = db;
+                    window.FB.storage = storage;
                     console.log("Firebase Inizializzato");
                     return true;
                 } catch (e) {
@@ -47,7 +51,8 @@
                     return false;
                 }
             },
-            getDocs, collection, doc, setDoc, deleteDoc, addDoc, query, orderBy, limit, writeBatch
+            getDocs, collection, doc, setDoc, deleteDoc, addDoc, query, orderBy, limit, writeBatch, where,
+            ref, uploadBytes, getDownloadURL, deleteObject
         };
     </script>
     
@@ -256,7 +261,10 @@
                 MessageSquare: <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" strokeWidth="2" /></>,
                 Clipboard: <><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" stroke="currentColor" strokeWidth="2" fill="none" /><rect x="8" y="2" width="8" height="4" rx="1" ry="1" stroke="currentColor" strokeWidth="2" fill="none" /></>,
                 User: <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke="currentColor" strokeWidth="2" /><circle cx="12" cy="7" r="4" stroke="currentColor" strokeWidth="2" /></>,
-                BookUser: <><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="currentColor" strokeWidth="2" fill="none" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" stroke="currentColor" strokeWidth="2" fill="none" /><circle cx="12" cy="8" r="2" stroke="currentColor" strokeWidth="2" /><path d="M15 13a3 3 0 1 0-6 0" stroke="currentColor" strokeWidth="2" /></>
+                BookUser: <><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="currentColor" strokeWidth="2" fill="none" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" stroke="currentColor" strokeWidth="2" fill="none" /><circle cx="12" cy="8" r="2" stroke="currentColor" strokeWidth="2" /><path d="M15 13a3 3 0 1 0-6 0" stroke="currentColor" strokeWidth="2" /></>,
+                FileText: <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>,
+                Upload: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><polyline points="17 8 12 3 7 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></>,
+                Download: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><polyline points="7 10 12 15 17 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></>
             };
             return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={`${className} shrink-0`}>{icons[name]}</svg>;
         };
@@ -353,7 +361,16 @@
             },
             async deleteLog(config, logId) {
                 if (config.storageMode === 'firebase') {
-                    // Requires getting DocID first, skipped for brevity in this simplified bridge
+                    if(!window.FB || !window.FB.db) return;
+                    const q = window.FB.query(window.FB.collection(window.FB.db, "logs"), window.FB.where("id", "==", logId));
+                    const snapshot = await window.FB.getDocs(q);
+                    snapshot.forEach(async (d) => { await window.FB.deleteDoc(d.ref); });
+                    return;
+                }
+                if (config.storageMode === 'server') {
+                    const url = getBaseUrl(config);
+                    await fetch(`${url}/api/logs/${logId}`, { method: 'DELETE' });
+                    return;
                 }
                 // LocalStorage Fallback for simulation
                 const logs = JSON.parse(localStorage.getItem('logs')) || [];
@@ -388,7 +405,7 @@
                     const res = await fetch(`${url}/api/categories`);
                     return await res.json();
                 }
-                return [];
+                return JSON.parse(localStorage.getItem('categories')) || [];
             },
             async addCategory(config, name) {
                 if (config.storageMode === 'firebase') {
@@ -396,6 +413,12 @@
                 } else if (config.storageMode === 'server') {
                     const url = getBaseUrl(config);
                     await fetch(`${url}/api/categories`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ name }) });
+                } else {
+                    const cats = JSON.parse(localStorage.getItem('categories')) || [];
+                    if(!cats.some(c => c.name === name)) {
+                        cats.push({ id: Date.now().toString(), name });
+                        localStorage.setItem('categories', JSON.stringify(cats));
+                    }
                 }
             },
             async deleteCategory(config, id) {
@@ -404,6 +427,9 @@
                 } else if (config.storageMode === 'server') {
                     const url = getBaseUrl(config);
                     await fetch(`${url}/api/categories/${id}`, { method: 'DELETE' });
+                } else {
+                    const cats = JSON.parse(localStorage.getItem('categories')) || [];
+                    localStorage.setItem('categories', JSON.stringify(cats.filter(c => c.id !== id)));
                 }
             },
             async migrateLocalToCloud(config) {
@@ -427,12 +453,23 @@
                     const snapshot = await window.FB.getDocs(q);
                     return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
                 }
+                if (config.storageMode === 'server') {
+                    const url = getBaseUrl(config);
+                    try {
+                        const res = await fetch(`${url}/api/customers`);
+                        if(res.ok) return await res.json();
+                    } catch(e) {}
+                }
                 return JSON.parse(localStorage.getItem('customers')) || [];
             },
             async saveCustomer(config, customer) {
                 if (config.storageMode === 'firebase') {
                     await window.FB.setDoc(window.FB.doc(window.FB.db, "customers", customer.id.toString()), customer);
                 } else {
+                    if (config.storageMode === 'server') {
+                        const url = getBaseUrl(config);
+                        await fetch(`${url}/api/customers`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(customer) });
+                    }
                     const customers = JSON.parse(localStorage.getItem('customers')) || [];
                     const idx = customers.findIndex(c => c.id === customer.id);
                     if (idx >= 0) customers[idx] = customer;
@@ -444,6 +481,10 @@
                 if (config.storageMode === 'firebase') {
                     await window.FB.addDoc(window.FB.collection(window.FB.db, "debt_logs"), log);
                 } else {
+                    if (config.storageMode === 'server') {
+                        const url = getBaseUrl(config);
+                        await fetch(`${url}/api/debt_logs`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(log) });
+                    }
                     const logs = JSON.parse(localStorage.getItem('debt_logs')) || [];
                     logs.push(log);
                     localStorage.setItem('debt_logs', JSON.stringify(logs));
@@ -456,8 +497,59 @@
                     const snapshot = await window.FB.getDocs(q);
                     return snapshot.docs.map(doc => doc.data()).filter(l => l.customerId === customerId);
                 }
+                if (config.storageMode === 'server') {
+                    const url = getBaseUrl(config);
+                    try {
+                        const res = await fetch(`${url}/api/debt_logs?customerId=${customerId}`);
+                        if(res.ok) return await res.json();
+                    } catch(e) {}
+                }
                 const logs = JSON.parse(localStorage.getItem('debt_logs')) || [];
                 return logs.filter(l => l.customerId === customerId);
+            },
+            async getDocuments(config, customerId) {
+                if (config.storageMode === 'server') {
+                    const url = getBaseUrl(config);
+                    try {
+                        const res = await fetch(`${url}/api/documents?customerId=${customerId}`);
+                        if(res.ok) return await res.json();
+                    } catch(e) {}
+                }
+                if (config.storageMode === 'firebase') {
+                    if(!window.FB || !window.FB.db) return [];
+                    const q = window.FB.query(window.FB.collection(window.FB.db, "customer_docs"), window.FB.where("customerId", "==", customerId));
+                    const snapshot = await window.FB.getDocs(q);
+                    return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+                }
+                return [];
+            },
+            async uploadDocument(config, customerId, file) {
+                if (config.storageMode === 'server') {
+                    const url = getBaseUrl(config);
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    formData.append('customerId', customerId);
+                    await fetch(`${url}/api/documents/upload`, { method: 'POST', body: formData });
+                }
+                if (config.storageMode === 'firebase') {
+                    if(!window.FB || !window.FB.storage) return;
+                    const storageRef = window.FB.ref(window.FB.storage, `docs/${customerId}/${Date.now()}_${file.name}`);
+                    await window.FB.uploadBytes(storageRef, file);
+                    const url = await window.FB.getDownloadURL(storageRef);
+                    const docData = { customerId, filename: file.name, date: new Date().toISOString(), mimeType: file.type, url };
+                    await window.FB.addDoc(window.FB.collection(window.FB.db, "customer_docs"), docData);
+                }
+            },
+            async deleteDocument(config, docId) {
+                if (config.storageMode === 'server') {
+                    const url = getBaseUrl(config);
+                    await fetch(`${url}/api/documents/${docId}`, { method: 'DELETE' });
+                }
+                if (config.storageMode === 'firebase') {
+                    if(!window.FB || !window.FB.db) return;
+                    const docRef = window.FB.doc(window.FB.db, "customer_docs", docId);
+                    await window.FB.deleteDoc(docRef);
+                }
             },
 
             // --- NUOVE API BILANCIA ---
@@ -688,7 +780,7 @@
         };
 
         // --- VISTE ---
-        const POSView = ({ products, cart, setCart, onCheckout, onDebtCheckout, config, onPrintReceipt, customers }) => {
+        const POSView = ({ products, cart, setCart, onCheckout, onDebtCheckout, config, onPrintReceipt, customers, onAddCustomer }) => {
             const [input, setInput] = useState(""); 
             const [searchMode, setSearchMode] = useState(false); 
             const [searchTerm, setSearchTerm] = useState(""); 
@@ -698,6 +790,7 @@
             const inputRef = useRef(null);
             const scaleInterval = useRef(null);
             const [showCustomerSelect, setShowCustomerSelect] = useState(false);
+            const [showAddClientModal, setShowAddClientModal] = useState(false);
             const [newCustomerName, setNewCustomerName] = useState("");
 
             useEffect(() => { if (!weightItem && !searchMode && !showCustomerSelect) inputRef.current?.focus(); }, [cart, weightItem, searchMode, showCustomerSelect]);
@@ -871,15 +964,7 @@
                             <div className="space-y-4">
                                 <div className="flex gap-2">
                                     <input placeholder="Cerca cliente..." className="flex-1 border p-2 rounded-lg" onChange={e => setSearchTerm(e.target.value)} />
-                                    <button onClick={() => {
-                                        const name = prompt("Nome nuovo cliente:");
-                                        if(name) {
-                                            const newC = { id: Date.now().toString(), name, balance: 0 };
-                                            // In a real app we'd save this properly via a callback, for now mock
-                                            onDebtCheckout(newC);
-                                            setShowCustomerSelect(false);
-                                        }
-                                    }} className="bg-green-500 text-white px-4 rounded-lg"><Icon name="Plus"/></button>
+                                    <button onClick={() => setShowAddClientModal(true)} className="bg-green-500 text-white px-4 rounded-lg"><Icon name="Plus"/></button>
                                 </div>
                                 <div className="max-h-64 overflow-y-auto space-y-2">
                                     {customers.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())).map(c => (
@@ -892,6 +977,35 @@
                             </div>
                         </Modal>
                     )}
+
+                    {showAddClientModal && (
+                        <Modal title="Nuovo Cliente" onClose={() => setShowAddClientModal(false)}>
+                            <form onSubmit={(e) => {
+                                e.preventDefault();
+                                const formData = new FormData(e.target);
+                                const name = formData.get('name');
+                                const phone = formData.get('phone');
+                                if(name) {
+                                    const newC = { id: Date.now().toString(), name, balance: 0, phone };
+                                    onAddCustomer(newC);
+                                    onDebtCheckout(newC);
+                                    setShowAddClientModal(false);
+                                    setShowCustomerSelect(false);
+                                }
+                            }} className="space-y-4">
+                                <div className="bg-blue-50 p-4 rounded-xl mb-4 flex items-center gap-3 text-blue-700">
+                                    <div className="bg-white p-2 rounded-full"><Icon name="User" size={20}/></div>
+                                    <div>
+                                        <h4 className="font-bold text-sm">Anagrafica Debitore</h4>
+                                        <p className="text-xs opacity-80">Inserisci i dati per il registro.</p>
+                                    </div>
+                                </div>
+                                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nome e Cognome</label><input name="name" className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:border-blue-500 font-bold text-slate-700" placeholder="Es. Mario Rossi" required autoFocus /></div>
+                                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Numero di Telefono</label><input name="phone" type="tel" className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:border-blue-500 font-mono text-slate-700" placeholder="Es. 333 1234567" /></div>
+                                <button className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-900/20 hover:bg-blue-500 transition-all mt-4">Salva e Seleziona</button>
+                            </form>
+                        </Modal>
+                    )}
                 </div>
             );
         };
@@ -900,7 +1014,7 @@
             const [barcode, setBarcode] = useState("");
             const [selectedProduct, setSelectedProduct] = useState(null);
             const [mode, setMode] = useState(null); // 'load' or 'waste'
-            const [quantity, setQuantity] = useState("");
+            const [loadData, setLoadData] = useState({ qty: "", expiry: "", supplier: "", cost: "" });
             const [reason, setReason] = useState("Avaria"); // for waste
 
             const handleScan = (e) => {
@@ -913,8 +1027,8 @@
             };
 
             const handleConfirm = () => {
-                if(!quantity || parseFloat(quantity) <= 0) return alert("Quantità non valida");
-                const qty = parseFloat(quantity);
+                if(!loadData.qty || parseFloat(loadData.qty) <= 0) return alert("Quantità non valida");
+                const qty = parseFloat(loadData.qty);
                 
                 let updatedP = { ...selectedProduct };
                 let batches = [...(updatedP.batches || [])];
@@ -927,9 +1041,9 @@
                     batches.push({
                         id: Date.now(),
                         stock: qty,
-                        expiryDate: "", // Quick load usually implies current date or generic
-                        cost: updatedP.cost || 0,
-                        supplier: "Carico Rapido"
+                        expiryDate: loadData.expiry || "", 
+                        cost: parseFloat(loadData.cost) || updatedP.cost || 0,
+                        supplier: loadData.supplier || "Carico Rapido"
                     });
                 } else if (mode === 'waste') {
                     // Waste: Reduce from oldest batches (FEFO) logic same as sales but without revenue
@@ -959,7 +1073,7 @@
                 
                 onUpdate(updatedP);
                 setSelectedProduct(null);
-                setQuantity("");
+                setLoadData({ qty: "", expiry: "", supplier: "", cost: "" });
                 setMode(null);
                 alert("Operazione completata");
             };
@@ -1015,9 +1129,26 @@
                                     </div>
                                     
                                     <div>
-                                        <label className="block text-sm font-bold text-slate-500 mb-2">Quantità ({selectedProduct.isWeighable ? 'Kg' : 'Pezzi'})</label>
-                                        <input type="number" value={quantity} onChange={e => setQuantity(e.target.value)} className="w-full text-center text-4xl font-bold border-b-2 border-slate-200 focus:border-blue-500 outline-none py-2" autoFocus />
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Quantità ({selectedProduct.isWeighable ? 'Kg' : 'Pezzi'})</label>
+                                        <input type="number" value={loadData.qty} onChange={e => setLoadData({...loadData, qty: e.target.value})} className="w-full text-center text-4xl font-bold border-b-2 border-slate-200 focus:border-blue-500 outline-none py-2" autoFocus />
                                     </div>
+
+                                    {mode === 'load' && (
+                                        <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                            <div className="col-span-2">
+                                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Fornitore / Note</label>
+                                                <input type="text" value={loadData.supplier} onChange={e => setLoadData({...loadData, supplier: e.target.value})} className="w-full p-2 rounded-lg border border-slate-200" placeholder="Es. Fornitore XYZ" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Scadenza</label>
+                                                <input type="date" value={loadData.expiry} onChange={e => setLoadData({...loadData, expiry: e.target.value})} className="w-full p-2 rounded-lg border border-slate-200" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Costo Unit.</label>
+                                                <input type="number" step="0.01" value={loadData.cost} onChange={e => setLoadData({...loadData, cost: e.target.value})} className="w-full p-2 rounded-lg border border-slate-200" placeholder="€" />
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {mode === 'waste' && (
                                         <div>
@@ -1034,7 +1165,7 @@
                                     )}
 
                                     <div className="flex gap-4 pt-4">
-                                        <button onClick={() => { setMode(null); setQuantity(""); }} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-xl">Annulla</button>
+                                        <button onClick={() => { setMode(null); setLoadData({ qty: "", expiry: "", supplier: "", cost: "" }); }} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-xl">Annulla</button>
                                         <button onClick={handleConfirm} className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl">Conferma</button>
                                     </div>
                                 </div>
@@ -1335,7 +1466,9 @@
             const handleDelete = async (log) => {
                 if(confirm("Sei sicuro di voler annullare questa transazione? Lo stock verrà ripristinato.")) {
                     try {
-                        await onRestoreStock(log);
+                        if (config.storageMode !== 'server') {
+                            await onRestoreStock(log);
+                        }
                         await onDelete(log.id);
                         setLogs(prev => prev.filter(l => l.id !== log.id));
                     } catch(e) {
@@ -1350,8 +1483,19 @@
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex-1 overflow-hidden flex flex-col">
                         <div className="overflow-y-auto flex-1">
                             <table className="w-full text-left">
-                                <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-bold sticky top-0"><tr><th className="px-6 py-4">Data</th><th className="px-6 py-4">ID Transazione</th><th className="px-6 py-4">Articoli</th><th className="px-6 py-4">Totale</th><th className="px-6 py-4 text-right">Azioni</th></tr></thead>
-                                <tbody className="divide-y divide-slate-100">{logs.map(log => (<tr key={log.id} className="hover:bg-slate-50"><td className="px-4 py-3 text-sm text-slate-600">{new Date(log.date).toLocaleString()}</td><td className="px-4 py-3 text-sm font-mono">{log.id.toString().slice(-8)}</td><td className="px-4 py-3 text-sm">{log.items.length} articoli</td><td className="px-4 py-3 font-bold text-slate-800">€{log.total.toFixed(2)}</td><td className="px-4 py-3 text-right flex justify-end gap-2"><button onClick={() => printReceipt(log, config)} className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg"><Icon name="Printer" size={16}/></button><button onClick={() => handleDelete(log)} className="p-2 hover:bg-red-50 text-red-600 rounded-lg"><Icon name="Trash" size={16}/></button></td></tr>))}</tbody>
+                                <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-bold sticky top-0"><tr><th className="px-6 py-4">Data</th><th className="px-6 py-4">ID Transazione</th><th className="px-6 py-4">Dettagli</th><th className="px-6 py-4">Totale</th><th className="px-6 py-4 text-right">Azioni</th></tr></thead>
+                                <tbody className="divide-y divide-slate-100">{logs.map(log => (
+                                    <tr key={log.id} className="hover:bg-slate-50">
+                                        <td className="px-4 py-3 text-sm text-slate-600">{new Date(log.date).toLocaleString()}</td>
+                                        <td className="px-4 py-3 text-sm font-mono">{log.id.toString().slice(-8)}</td>
+                                        <td className="px-4 py-3 text-sm">{log.type === 'payment_received' ? <span className="font-bold text-green-600">{log.description}</span> : `${log.items ? log.items.length : 0} articoli`}</td>
+                                        <td className="px-4 py-3 font-bold text-slate-800">€{log.total.toFixed(2)}</td>
+                                        <td className="px-4 py-3 text-right flex justify-end gap-2">
+                                            <button onClick={() => printReceipt(log, config)} className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg"><Icon name="Printer" size={16}/></button>
+                                            {log.type !== 'payment_received' && <button onClick={() => handleDelete(log)} className="p-2 hover:bg-red-50 text-red-600 rounded-lg"><Icon name="Trash" size={16}/></button>}
+                                        </td>
+                                    </tr>
+                                ))}</tbody>
                             </table>
                         </div>
                     </div>
@@ -1365,12 +1509,20 @@
             const [paymentAmount, setPaymentAmount] = useState("");
             const [customerLogs, setCustomerLogs] = useState([]);
             const [searchTerm, setSearchTerm] = useState("");
+            const [activeTab, setActiveTab] = useState('accounting'); // 'accounting' or 'docs'
+            const [docs, setDocs] = useState([]);
+            const [showAddModal, setShowAddModal] = useState(false);
 
             const refreshLogs = async () => {
                 if(selectedCustomer) {
                     const logs = await DataAdapter.getDebtLogs(config, selectedCustomer.id);
                     setCustomerLogs(logs.sort((a,b) => new Date(b.date) - new Date(a.date)));
+                    refreshDocs();
                 }
+            };
+
+            const refreshDocs = async () => {
+                if(selectedCustomer) setDocs(await DataAdapter.getDocuments(config, selectedCustomer.id));
             };
 
             useEffect(() => { refreshLogs(); }, [selectedCustomer]);
@@ -1394,10 +1546,30 @@
                 };
                 await DataAdapter.saveDebtLog(config, log);
                 
+                // LOGICA AGGIUNTA: Registra l'incasso anche nello storico generale per la Dashboard
+                const mainLog = {
+                    id: Date.now() + 1, // ID univoco
+                    date: new Date().toISOString(),
+                    type: 'payment_received',
+                    total: amt,
+                    netTotal: amt, // Consideriamo l'incasso come liquidità netta per il giorno
+                    taxTotal: 0,
+                    items: [], // Nessun articolo fisico movimentato ora
+                    description: `Rientro Credito: ${selectedCustomer.name}`
+                };
+                await DataAdapter.saveLog(config, mainLog);
+
                 setSelectedCustomer(updatedCustomer);
                 setPaymentAmount("");
                 refreshLogs();
                 alert("Pagamento registrato");
+            };
+
+            const handleFileUpload = async (e) => {
+                if(e.target.files && e.target.files[0]) {
+                    await DataAdapter.uploadDocument(config, selectedCustomer.id, e.target.files[0]);
+                    refreshDocs();
+                }
             };
 
             return (
@@ -1408,10 +1580,7 @@
                             <h3 className="font-bold text-lg text-slate-700 mb-3">Clienti</h3>
                             <div className="flex gap-2">
                                 <input className="flex-1 border p-2 rounded-lg text-sm" placeholder="Cerca..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                                <button onClick={() => {
-                                    const name = prompt("Nome nuovo cliente:");
-                                    if(name) onAddCustomer({ id: Date.now().toString(), name, balance: 0, phone: "" });
-                                }} className="bg-blue-600 text-white p-2 rounded-lg"><Icon name="Plus" size={20}/></button>
+                                <button onClick={() => setShowAddModal(true)} className="bg-blue-600 text-white p-2 rounded-lg"><Icon name="Plus" size={20}/></button>
                             </div>
                         </div>
                         <div className="flex-1 overflow-y-auto">
@@ -1442,38 +1611,103 @@
                                     </div>
                                 </div>
                                 
-                                <div className="p-6 bg-yellow-50 border-b border-yellow-100 flex gap-4 items-end">
-                                    <div className="flex-1">
-                                        <label className="text-xs font-bold text-yellow-700 uppercase">Registra Pagamento (Rientro)</label>
-                                        <input type="number" step="0.01" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} className="w-full p-3 rounded-xl border border-yellow-200 font-bold text-lg" placeholder="€ 0.00"/>
-                                    </div>
-                                    <button onClick={handlePayment} className="bg-yellow-500 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-yellow-500/20 hover:bg-yellow-600 transition-all">CONFERMA PAGAMENTO</button>
+                                <div className="flex border-b border-slate-200">
+                                    <button onClick={() => setActiveTab('accounting')} className={`flex-1 py-3 font-bold text-sm flex items-center justify-center gap-2 ${activeTab === 'accounting' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-slate-500 hover:bg-slate-50'}`}><Icon name="List" size={16}/> Movimenti Contabili</button>
+                                    <button onClick={() => setActiveTab('docs')} className={`flex-1 py-3 font-bold text-sm flex items-center justify-center gap-2 ${activeTab === 'docs' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-slate-500 hover:bg-slate-50'}`}><Icon name="FileText" size={16}/> Documenti & Scansioni</button>
                                 </div>
 
-                                <div className="flex-1 overflow-y-auto p-0">
-                                    <table className="w-full text-left">
-                                        <thead className="bg-slate-50 text-slate-500 text-xs uppercase sticky top-0">
-                                            <tr><th className="p-4">Data</th><th className="p-4">Tipo</th><th className="p-4">Dettagli</th><th className="p-4 text-right">Importo</th></tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100">
-                                            {customerLogs.map(log => (
-                                                <tr key={log.id}>
-                                                    <td className="p-4 text-sm text-slate-600">{new Date(log.date).toLocaleDateString()}</td>
-                                                    <td className="p-4"><span className={`text-xs font-bold px-2 py-1 rounded ${log.type === 'DEBT' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>{log.type === 'DEBT' ? 'ACQUISTO' : 'PAGAMENTO'}</span></td>
-                                                    <td className="p-4 text-sm text-slate-500 truncate max-w-xs">{log.description}</td>
-                                                    <td className={`p-4 text-right font-mono font-bold ${log.amount > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                                                        {log.amount > 0 ? '+' : ''}€{log.amount.toFixed(2)}
-                                                    </td>
-                                                </tr>
+                                {activeTab === 'accounting' && (
+                                    <>
+                                        <div className="p-6 bg-yellow-50 border-b border-yellow-100 flex gap-4 items-end">
+                                            <div className="flex-1">
+                                                <label className="text-xs font-bold text-yellow-700 uppercase">Registra Pagamento (Rientro)</label>
+                                                <input type="number" step="0.01" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} className="w-full p-3 rounded-xl border border-yellow-200 font-bold text-lg" placeholder="€ 0.00"/>
+                                            </div>
+                                            <button onClick={handlePayment} className="bg-yellow-500 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-yellow-500/20 hover:bg-yellow-600 transition-all">CONFERMA PAGAMENTO</button>
+                                        </div>
+                                        <div className="flex-1 overflow-y-auto p-0">
+                                            <table className="w-full text-left">
+                                                <thead className="bg-slate-50 text-slate-500 text-xs uppercase sticky top-0">
+                                                    <tr><th className="p-4">Data</th><th className="p-4">Tipo</th><th className="p-4">Dettagli</th><th className="p-4 text-right">Importo</th></tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {customerLogs.map(log => (
+                                                        <tr key={log.id}>
+                                                            <td className="p-4 text-sm text-slate-600">{new Date(log.date).toLocaleDateString()}</td>
+                                                            <td className="p-4"><span className={`text-xs font-bold px-2 py-1 rounded ${log.type === 'DEBT' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>{log.type === 'DEBT' ? 'ACQUISTO' : 'PAGAMENTO'}</span></td>
+                                                            <td className="p-4 text-sm text-slate-500 truncate max-w-xs">{log.description}</td>
+                                                            <td className={`p-4 text-right font-mono font-bold ${log.amount > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                                                {log.amount > 0 ? '+' : ''}€{log.amount.toFixed(2)}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </>
+                                )}
+
+                                {activeTab === 'docs' && (
+                                    <div className="flex-1 flex flex-col p-6 bg-slate-50/50">
+                                        <div className="mb-6 flex items-center gap-4">
+                                            <label className="flex-1 cursor-pointer bg-white border-2 border-dashed border-blue-300 hover:border-blue-500 hover:bg-blue-50 rounded-xl p-8 flex flex-col items-center justify-center transition-all group">
+                                                <input type="file" className="hidden" onChange={handleFileUpload} accept="image/*,application/pdf" />
+                                                <div className="bg-blue-100 text-blue-600 p-3 rounded-full mb-3 group-hover:scale-110 transition-transform"><Icon name="Upload" size={24}/></div>
+                                                <span className="font-bold text-slate-700">Carica Documento o Scansione</span>
+                                                <span className="text-xs text-slate-400 mt-1">PDF, JPG, PNG supportati</span>
+                                            </label>
+                                        </div>
+                                        <div className="flex-1 overflow-y-auto space-y-3">
+                                            {docs.length === 0 ? <div className="text-center text-slate-400 py-10 italic">Nessun documento caricato</div> : 
+                                            docs.map(doc => (
+                                                <div key={doc.id} className="bg-white p-4 rounded-xl border border-slate-200 flex items-center justify-between shadow-sm hover:shadow-md transition-shadow">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="bg-orange-100 text-orange-600 p-3 rounded-lg"><Icon name="FileText" size={20}/></div>
+                                                        <div>
+                                                            <div className="font-bold text-slate-700">{doc.filename.substring(11)}</div>
+                                                            <div className="text-xs text-slate-400">{new Date(doc.date).toLocaleString()}</div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <a href={doc.url || `${getBaseUrl(config)}/api/documents/${doc.id}`} target="_blank" className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" title="Scarica/Visualizza"><Icon name="Download" size={18}/></a>
+                                                        <button onClick={async () => { if(confirm("Eliminare documento?")) { await DataAdapter.deleteDocument(config, doc.id); refreshDocs(); }}} className="p-2 text-red-500 hover:bg-red-50 rounded-lg" title="Elimina"><Icon name="Trash" size={18}/></button>
+                                                    </div>
+                                                </div>
                                             ))}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                        </div>
+                                    </div>
+                                )}
                             </>
                         ) : (
                             <div className="flex-1 flex items-center justify-center text-slate-400">Seleziona un cliente per vedere i dettagli</div>
                         )}
                     </div>
+
+                    {showAddModal && (
+                        <Modal title="Nuovo Cliente" onClose={() => setShowAddModal(false)}>
+                            <form onSubmit={(e) => {
+                                e.preventDefault();
+                                const formData = new FormData(e.target);
+                                const name = formData.get('name');
+                                const phone = formData.get('phone');
+                                if(name) {
+                                    onAddCustomer({ id: Date.now().toString(), name, balance: 0, phone });
+                                    setShowAddModal(false);
+                                }
+                            }} className="space-y-4">
+                                <div className="bg-blue-50 p-4 rounded-xl mb-4 flex items-center gap-3 text-blue-700">
+                                    <div className="bg-white p-2 rounded-full"><Icon name="User" size={20}/></div>
+                                    <div>
+                                        <h4 className="font-bold text-sm">Anagrafica Debitore</h4>
+                                        <p className="text-xs opacity-80">Inserisci i dati per il registro.</p>
+                                    </div>
+                                </div>
+                                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nome e Cognome</label><input name="name" className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:border-blue-500 font-bold text-slate-700" placeholder="Es. Mario Rossi" required autoFocus /></div>
+                                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Numero di Telefono</label><input name="phone" type="tel" className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:border-blue-500 font-mono text-slate-700" placeholder="Es. 333 1234567" /></div>
+                                <button className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-900/20 hover:bg-blue-500 transition-all mt-4">Salva Cliente</button>
+                            </form>
+                        </Modal>
+                    )}
                 </div>
             );
         };
@@ -1587,6 +1821,10 @@
                         let dailyProfit = 0; 
                         
                         todayLogs.forEach(log => { 
+                            if (log.type === 'payment_received') {
+                                dailyProfit += log.total; // Il rientro credito è tutto "cassa" per il giorno
+                                return;
+                            }
                             if (log.totalCost) {
                                 const netRevenue = log.netTotal || (log.total / 1.22);
                                 dailyProfit += (netRevenue - log.totalCost);
@@ -1995,7 +2233,7 @@
                             <div className="bg-white h-16 border-b border-slate-200 flex items-center justify-between px-6 shadow-sm z-10"><h1 className="font-bold text-xl text-slate-800">{view === 'pos' ? 'Nuova Vendita' : view === 'inventory' ? 'Gestione Magazzino' : view === 'history' ? 'Storico Transazioni' : view === 'warehouse' ? 'Operazioni Magazzino' : view === 'debts' ? 'Registro Debiti' : 'Pannello Controllo'}</h1><div className="flex items-center gap-2 text-xs font-medium"><div className={`w-2 h-2 rounded-full ${serverStatus === 'online' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`}></div><button onClick={fetchData} className="text-slate-400 hover:text-blue-500 underline decoration-dotted">{serverStatus === 'online' ? 'ONLINE' : 'OFFLINE (Riprova)'}</button></div></div>
                             {loading ? <div className="flex-1 flex items-center justify-center text-slate-400">Caricamento...</div> : 
                             <div className="flex-1 overflow-hidden p-6">
-                                {view === 'pos' && <POSView products={products} cart={cart} setCart={setCart} onAddToCart={addToCart} onCheckout={checkout} onDebtCheckout={handleDebtCheckout} customers={customers} config={config} onPrintReceipt={() => logs[0] && printReceipt(logs[0], config)} />}
+                                {view === 'pos' && <POSView products={products} cart={cart} setCart={setCart} onAddToCart={addToCart} onCheckout={checkout} onDebtCheckout={handleDebtCheckout} customers={customers} config={config} onPrintReceipt={() => logs[0] && printReceipt(logs[0], config)} onAddCustomer={handleAddCustomer} />}
                                 {view === 'inventory' && <InventoryView products={products} onUpdate={updateProduct} onCreate={createProduct} onDelete={deleteProduct} refresh={fetchData} categories={categories} addCat={addCategory} delCat={deleteCategory} />}
                                 {view === 'warehouse' && <WarehouseView products={products} onUpdate={updateProduct} />}
                                 {view === 'history' && <HistoryView config={config} onDelete={deleteLog} products={products} onRestoreStock={restoreStock} />}
