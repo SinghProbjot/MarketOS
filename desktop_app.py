@@ -89,15 +89,21 @@ if __name__ == '__main__':
             icon_path = os.path.join(base_path, 'logo.ico')
             if not os.path.exists(icon_path): icon_path = None
 
-            window = webview.create_window(
-                'MarketOS Pro', 
-                SERVER_URL, 
-                width=1280, 
-                height=800,
-                confirm_close=True,
-                text_select=False,
-                icon=icon_path
-            )
+            # Prepare arguments for window creation
+            window_args = {
+                'title': 'MarketOS Pro',
+                'url': SERVER_URL,
+                'width': 1280,
+                'height': 800,
+                'confirm_close': True,
+                'text_select': False
+            }
+
+            # Only pass 'icon' on Windows where it is supported/needed by pywebview
+            if system_os == 'Windows' and icon_path:
+                window_args['icon'] = icon_path
+
+            window = webview.create_window(**window_args)
             
             window.events.closed += on_closed
             
