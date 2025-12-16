@@ -21,6 +21,7 @@ cp "$SOURCE_DIR/server.py" "$INSTALL_DIR/"
 cp "$SOURCE_DIR/desktop_app.py" "$INSTALL_DIR/"
 cp "$SOURCE_DIR/updater.py" "$INSTALL_DIR/"
 cp "$SOURCE_DIR/version.json" "$INSTALL_DIR/local_version.json"
+cp "$SOURCE_DIR/logo.ico" "$INSTALL_DIR/"
 cp "$SOURCE_DIR/Start_Market.command" "$INSTALL_DIR/"
 
 # Rendi eseguibile il launcher copiato

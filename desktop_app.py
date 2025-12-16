@@ -83,14 +83,20 @@ if __name__ == '__main__':
     if wait_for_server(SERVER_URL):
         try:
             log("Creazione finestra webview...")
-            # Senza icona specifica per compatibilità Mac/Linux immediata
+            
+            # Gestione Icona (Funziona sia da script che da EXE compilato)
+            base_path = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+            icon_path = os.path.join(base_path, 'logo.ico')
+            if not os.path.exists(icon_path): icon_path = None
+
             window = webview.create_window(
                 'MarketOS Pro', 
                 SERVER_URL, 
                 width=1280, 
                 height=800,
                 confirm_close=True,
-                text_select=False
+                text_select=False,
+                icon=icon_path
             )
             
             window.events.closed += on_closed
